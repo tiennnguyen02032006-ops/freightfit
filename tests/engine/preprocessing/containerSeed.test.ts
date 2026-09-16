@@ -3,8 +3,18 @@ import { STANDARD_CONTAINER_TEMPLATES } from '../../../src/engine/preprocessing/
 
 describe('STANDARD_CONTAINER_TEMPLATES', () => {
   it('có đủ 7 template chuẩn 20FT/20FT_REEFER/20FT_HC/40FT_GP/40FT_HC/40FT_REEFER/45FT', () => {
-    const types = STANDARD_CONTAINER_TEMPLATES.map((t) => t.standardType);
-    expect(types).toEqual(['20FT', '20FT_REEFER', '20FT_HC', '40FT_GP', '40FT_HC', '40FT_REEFER', '45FT']);
+    // Không so trực tiếp toàn bộ mảng nữa vì containerLibrary còn có thêm các xe tải nhỏ
+    // (standardType: 'CUSTOM_TRUCK', xem cuối containerSeed.ts) — chỉ kiểm tra đúng thứ tự/đủ 7
+    // loại container ISO chuẩn, lọc riêng khỏi các xe tải.
+    const isoTypes = STANDARD_CONTAINER_TEMPLATES.map((t) => t.standardType).filter((t) => t !== 'CUSTOM_TRUCK');
+    expect(isoTypes).toEqual(['20FT', '20FT_REEFER', '20FT_HC', '40FT_GP', '40FT_HC', '40FT_REEFER', '45FT']);
+  });
+
+  it('có thêm các xe tải nhỏ (CUSTOM_TRUCK), mỗi xe id duy nhất', () => {
+    const trucks = STANDARD_CONTAINER_TEMPLATES.filter((t) => t.standardType === 'CUSTOM_TRUCK');
+    expect(trucks.length).toBeGreaterThan(0);
+    const ids = trucks.map((t) => t.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('mỗi template có kích thước và maxPayload dương, không phải custom', () => {

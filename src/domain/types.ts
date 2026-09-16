@@ -258,6 +258,17 @@ export interface PackingSolution {
   stats: SolutionStats;
 }
 
+// Gợi ý đổi loại container/xe cho CONTAINER CUỐI CÙNG của 1 solution nhiều container, khi
+// container đó dùng quá ít so với thể tích/tải trọng thật (xem
+// engine/optimization/suggestBetterContainer.ts) — tách khỏi PackingSolution vì đây là kết quả
+// PHÂN TÍCH SAU khi đã có solution (không phải một phần của thuật toán packing), lưu riêng ở
+// SolutionSlice (xem store/slices/solutionSlice.ts) theo đúng gợi ý trong yêu cầu tính năng.
+export interface ContainerSuggestion {
+  suggestedTemplateId: string;
+  fillRatioBefore: number;        // 0..1 — tỷ lệ lấp đầy cao hơn giữa thể tích/tải trọng TRƯỚC khi đổi
+  estimatedSavings: number | null; // VNĐ/chuyến, ước tính so với costPerTrip hiện tại — null nếu thiếu số liệu costPerTrip để so
+}
+
 // ============================================================
 // 10. MANUAL EDIT / HISTORY (P3)
 // ============================================================
@@ -302,6 +313,13 @@ export interface AppState {
   candidateVehiclePlans: VehiclePlan[];
 
   solution: PackingSolution | null;    // 1 thuật toán extreme point duy nhất, không còn chọn phương án
+  lastContainerSuggestion: ContainerSuggestion | null; // gợi ý đổi xe cho container cuối, xem ContainerSuggestion
+
+  // Quãng đường vận chuyển (km) người dùng nhập ở TransportCostPanel — nâng lên store (thay vì
+  // state cục bộ của riêng panel đó) để suggestBetterContainer cũng dùng được cùng 1 giá trị khi
+  // so sánh chi phí costPerTrip + costPerKm*km giữa các loại xe/container (xem
+  // engine/optimization/suggestBetterContainer.ts). 0 = chưa nhập/không tính theo cước km.
+  transportDistanceKm: number;
 
   activeContainerInstanceId: string | null;
   editHistory: EditHistoryState;

@@ -10,7 +10,7 @@ export function ImportPanel() {
   const addCargoTemplates = useAppStore((s) => s.addCargoTemplates);
   const cargoTemplates = useAppStore((s) => s.cargoTemplates);
 
-  const [unit, setUnit] = useState<LengthUnit>('mm');
+  const [unit, setUnit] = useState<LengthUnit>('cm');
   const [isParsing, setIsParsing] = useState(false);
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -54,9 +54,9 @@ export function ImportPanel() {
         <label>
           Đơn vị kích thước trong file:
           <select value={unit} onChange={(e) => setUnit(e.target.value as LengthUnit)}>
-            <option value="mm">mm</option>
             <option value="cm">cm</option>
-            <option value="m">m</option>
+            <option value="in">inch</option>
+            <option value="ft">feet</option>
           </select>
         </label>
         <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileChange} disabled={isParsing} />

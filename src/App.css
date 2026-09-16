@@ -648,14 +648,23 @@ button.primary:hover:not(:disabled) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
+  /* nowrap CỐ Ý (khác các hàng flex khác trong app cho phép wrap) — tên container/xe dài (vd
+     "Xe tải Veam VT750 TK (thùng kín) (605 × 205 × 187 cm)") trước đây từng đẩy phần nút xuống
+     dòng riêng, khiến dải trông như 2 thanh nền tách biệt (mỗi dòng lại nằm trong .scene-stats-bar
+     background/border-radius chung nhưng bị flex-wrap chia đôi theo chiều dọc). Bắt buộc 1 dòng
+     duy nhất, nhường .container-picker (min-width:0 + ellipsis, xem dưới) tự co lại và cắt ngắn
+     tên bằng "..." thay vì đẩy nút xuống dòng khác. */
+  flex-wrap: nowrap;
   gap: 8px 10px;
 }
 
 .scene-stats-bar-header-actions {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  /* Không bao giờ co/cắt các nút hành động (Tạo phương án/Xuất PDF/thu gọn) — chỗ trống thiếu hụt
+     khi tên dài phải lấy từ .container-picker co lại, không phải từ đây. */
+  flex-shrink: 0;
   gap: 8px;
 }
 
@@ -686,6 +695,12 @@ button.primary:hover:not(:disabled) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* min-width: 0 BẮT BUỘC ở chính flex item này (không chỉ ở .container-picker/
+     .container-picker-trigger bao ngoài) — mặc định flex item có min-width: auto, tức KHÔNG BAO
+     GIỜ tự co nhỏ hơn nội dung của nó (kể cả khi overflow: hidden), nên white-space: nowrap +
+     text-overflow: ellipsis ở trên sẽ vô tác dụng nếu thiếu dòng này khi tên container/xe dài hơn
+     chỗ trống thật sự còn lại. */
+  min-width: 0;
 }
 
 .scene-stats-bar-generate-btn {
@@ -702,6 +717,45 @@ button.primary:hover:not(:disabled) {
   filter: brightness(1.05);
 }
 
+.scene-stats-bar-export-btn {
+  flex-shrink: 0;
+  padding: 4px 9px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: color-mix(in srgb, #f2f3f5 12%, transparent);
+  color: #f2f3f5;
+}
+
+.scene-stats-bar-export-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, #f2f3f5 22%, transparent);
+}
+
+.scene-stats-bar-export-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Nút thu gọn/mở lại toàn bộ dải thông tin container (mũi tên ▾/▸) — luôn ở cuối
+   .scene-stats-bar-header-actions, kể cả khi thu gọn (2 nút Tạo phương án/Xuất PDF ẩn đi) để
+   không bao giờ mất chỗ mở lại. */
+.scene-stats-bar-collapse-btn {
+  flex-shrink: 0;
+  padding: 4px 7px;
+  font-size: 11px;
+  line-height: 1;
+  background: color-mix(in srgb, #f2f3f5 12%, transparent);
+  color: #f2f3f5;
+}
+
+.scene-stats-bar-collapse-btn:hover {
+  background: color-mix(in srgb, #f2f3f5 22%, transparent);
+}
+
+.scene-stats-bar.is-collapsed {
+  gap: 0;
+  padding: 4px 6px;
+}
+
 .scene-stats-bar-note {
   font-size: 11px;
   font-style: italic;
@@ -715,6 +769,38 @@ button.primary:hover:not(:disabled) {
   font-size: 11.5px;
   font-weight: 600;
   color: #ffa940;
+}
+
+.scene-stats-bar-suggestion {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #4da6ff 18%, transparent);
+  border: 1px solid color-mix(in srgb, #4da6ff 40%, transparent);
+}
+
+.scene-stats-bar-suggestion-text {
+  flex: 1;
+  min-width: 180px;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.scene-stats-bar-suggestion-apply-btn {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: #4da6ff;
+  border-color: #4da6ff;
+  color: #06131f;
+}
+
+.scene-stats-bar-suggestion-apply-btn:hover:not(:disabled) {
+  filter: brightness(1.05);
 }
 
 .scene-stats-bar-metrics {
@@ -778,6 +864,12 @@ button.primary:hover:not(:disabled) {
 
 .container-picker {
   position: relative;
+  /* flex: 1 1 auto + min-width: 0 = phần tử DUY NHẤT trong .scene-stats-bar-header được phép co
+     lại khi thiếu chỗ (thay vì bị đẩy xuống dòng khác, xem giải thích flex-wrap: nowrap ở trên) —
+     min-width: 0 ghi đè min-width mặc định "auto" của flex item (vốn không bao giờ co nhỏ hơn nội
+     dung bên trong), điều kiện bắt buộc để white-space: nowrap + text-overflow: ellipsis của
+     .scene-stats-bar-title (bên trong .container-picker-trigger) thực sự phát huy tác dụng. */
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -786,6 +878,13 @@ button.primary:hover:not(:disabled) {
   align-items: center;
   gap: 6px;
   min-width: 0;
+  /* width: 100% BẮT BUỘC — <button> (dù đã display:flex) vẫn giữ kiểu tự co theo nội dung
+     (shrink-to-fit) như các form control khác thay vì tự lấp đầy chiều rộng phần tử cha
+     (.container-picker) như 1 <div> thường, nên nếu không ép width:100% ở đây, nút này (và
+     .scene-stats-bar-title bên trong) sẽ TRÀN RỘNG hơn hẳn .container-picker đã bị flexbox co lại
+     — khiến ellipsis không bao giờ kích hoạt dù .container-picker/.scene-stats-bar-title đã có
+     min-width: 0 đầy đủ. */
+  width: 100%;
   padding: 2px 4px;
   background: none;
   border: none;

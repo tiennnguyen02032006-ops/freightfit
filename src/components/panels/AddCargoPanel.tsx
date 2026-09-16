@@ -36,17 +36,49 @@ const emptyForm = {
 export function AddCargoPanel() {
   const cargoTemplates = useAppStore((s) => s.cargoTemplates);
   const addCargoTemplates = useAppStore((s) => s.addCargoTemplates);
+  const updateCargoTemplate = useAppStore((s) => s.updateCargoTemplate);
   const removeCargoTemplate = useAppStore((s) => s.removeCargoTemplate);
   const setCargoColor = useAppStore((s) => s.setCargoColor);
 
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(true);
+  // id của template ĐANG SỬA (null = đang ở chế độ thêm mới) — cùng 1 form/state duy nhất cho cả
+  // thêm mới và sửa, chỉ khác ở chỗ handleSubmit gọi updateCargoTemplate (giữ nguyên id) thay vì
+  // addCargoTemplates (tạo template mới) khi editingId khác null. Xem handleEdit/handleSubmit.
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const handleCancel = () => {
     setForm(emptyForm);
     setError(null);
+    setEditingId(null);
     setFormOpen(false);
+  };
+
+  // Mở form ở chế độ SỬA cho đúng template `t` — điền lại L/W/H bằng cm (dữ liệu lưu trong mm,
+  // xem CLAUDE.md đơn vị thống nhất mm) để người dùng dễ sửa, KHÔNG dùng formatMmAsCm (dành cho
+  // hiển thị, trả về chuỗi kiểu vi-VN dùng dấu phẩy thập phân — không parse lại được bằng Number()
+  // cho input type="number"), mà chia thẳng cho 10 lấy số thô.
+  const handleEdit = (t: CargoTemplate) => {
+    setError(null);
+    setEditingId(t.id);
+    setFormOpen(true);
+    setForm({
+      sku: t.sku,
+      shapeType: t.shapeType,
+      length: String(t.length / 10),
+      width: String(t.width / 10),
+      height: String(t.height / 10),
+      unit: 'cm',
+      weight: String(t.weight),
+      quantity: String(t.quantity),
+      rotation: t.rotation,
+      stackable: t.stackable,
+      fragile: t.fragile,
+      mustKeepUpright: t.mustKeepUpright,
+      maxStackLevel: t.maxStackLevel != null ? String(t.maxStackLevel) : '',
+      maxLoadOnTop: t.maxLoadOnTop != null ? String(t.maxLoadOnTop) : '',
+    });
   };
 
   const update = <K extends keyof typeof emptyForm>(key: K, value: (typeof emptyForm)[K]) =>
@@ -73,20 +105,28 @@ export function AddCargoPanel() {
     const height = convertToMm(Number(form.height), form.unit);
     if (!(length > 0) || !(width > 0) || !(height > 0)) return setError('Kích thước phải > 0');
 
-    // Màu: dùng lại màu đã lưu từ trước cho đúng SKU này (nếu có, kể cả sau khi F5), nếu chưa
-    // từng có thì tự sinh 1 màu khác các SKU đang hiển thị — người dùng đổi lại sau qua color
-    // picker trong danh sách bên dưới.
     const sku = form.sku.trim();
-    const persistedColor = getPersistedSkuColor(sku);
-    const color = persistedColor ?? generateDistinctColor(cargoTemplates.map((t) => t.color));
-    if (!persistedColor) setPersistedSkuColor(sku, color);
+
+    // Màu: chế độ SỬA giữ NGUYÊN màu cũ của template (màu chỉnh riêng qua color picker trong
+    // cargo-list, không phải qua form này — xem yêu cầu tính năng chỉ liệt kê các field khác).
+    // Chế độ THÊM MỚI: dùng lại màu đã lưu từ trước cho đúng SKU này (nếu có, kể cả sau khi F5),
+    // nếu chưa từng có thì tự sinh 1 màu khác các SKU đang hiển thị.
+    const editingTemplate = editingId ? cargoTemplates.find((t) => t.id === editingId) : undefined;
+    let color: string;
+    if (editingTemplate) {
+      color = editingTemplate.color;
+    } else {
+      const persistedColor = getPersistedSkuColor(sku);
+      color = persistedColor ?? generateDistinctColor(cargoTemplates.map((t) => t.color));
+      if (!persistedColor) setPersistedSkuColor(sku, color);
+    }
 
     // Hình trụ luôn giữ đứng (trục thẳng đứng) bất kể ô "Giữ đứng" — CargoBox3D vẽ hình trụ theo
     // trục Y cố định, xoay nằm ngang sẽ không khớp với khối bao quanh D x D x H đã tính.
     const mustKeepUpright = isCylinder ? true : form.mustKeepUpright;
 
     const template: CargoTemplate = {
-      id: `cargo-manual-${Date.now()}`,
+      id: editingId ?? `cargo-manual-${Date.now()}`,
       sku,
       name: sku,
       shapeType: form.shapeType,
@@ -106,8 +146,13 @@ export function AddCargoPanel() {
       clearance: zeroClearance,
     };
 
-    addCargoTemplates([template]);
+    if (editingId) {
+      updateCargoTemplate(template);
+    } else {
+      addCargoTemplates([template]);
+    }
     setForm(emptyForm);
+    setEditingId(null);
   };
 
   return (
@@ -311,7 +356,7 @@ export function AddCargoPanel() {
             Hủy
           </button>
           <button type="submit" className="primary">
-            + Thêm hàng
+            {editingId ? 'Lưu thay đổi' : '+ Thêm hàng'}
           </button>
         </div>
       </form>
@@ -336,6 +381,15 @@ export function AddCargoPanel() {
                   {t.quantity}
                 </span>
               </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => handleEdit(t)}
+                aria-label={`Sửa ${t.sku}`}
+                title="Sửa"
+              >
+                ✏️
+              </button>
               <button type="button" className="icon-button" onClick={() => removeCargoTemplate(t.id)} aria-label="Xóa">
                 ×
               </button>

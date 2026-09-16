@@ -122,6 +122,39 @@ function footprintOverlaps(
   return !(a.x + a.length <= b.x || b.x + b.length <= a.x || a.y + a.width <= b.y || b.y + b.width <= a.y);
 }
 
+export interface FloorZResult {
+  floorZ: number;
+  // Kiện CỤ THỂ tạo ra floorZ — undefined khi floorZ=0 (sàn container, không phải 1 kiện cụ thể).
+  floorSupportPlacement?: SnapBox3D;
+}
+
+/**
+ * Tính floorZ THUẦN TÚY theo kiểu "trọng lực" (gravity-drop, xem DraggablePlacement.tsx): mặt
+ * phẳng CAO NHẤT trong số MỌI kiện có footprint (x,y) chồng lên `candidate` — 0 nếu không có kiện
+ * nào (tức sàn container). KHÁC `snapVerticalPosition` ở chỗ KHÔNG phân loại "đỡ dưới"/"chặn
+ * trên" theo so sánh TÂM (vì kiểu kéo trọng lực không còn khái niệm "Z hiện tại" để so sánh —
+ * người dùng chỉ điều khiển X/Y, Z luôn = floorZ), và KHÔNG có khái niệm ceiling/ngưỡng snap —
+ * TÁI SỬ DỤNG `footprintOverlaps` (đúng phép kiểm tra chồng lấn chân đế đã có), chỉ khác cách
+ * TỔNG HỢP kết quả cho phù hợp với ngữ nghĩa "luôn rơi xuống mặt cao nhất bên dưới" thay vì "kẹp
+ * giữa 2 ràng buộc cứng theo vị trí Z đang kéo tới" như `snapVerticalPosition`.
+ */
+export function computeFloorZ(
+  candidate: { x: number; y: number; length: number; width: number },
+  otherPlacements: SnapBox3D[],
+): FloorZResult {
+  let floorZ = 0;
+  let floorSupportPlacement: SnapBox3D | undefined;
+  for (const p of otherPlacements) {
+    if (!footprintOverlaps(candidate, p)) continue;
+    const topZ = p.z + p.height;
+    if (topZ > floorZ) {
+      floorZ = topZ;
+      floorSupportPlacement = p;
+    }
+  }
+  return { floorZ, floorSupportPlacement };
+}
+
 export interface SnapVerticalParams {
   candidate: { x: number; y: number; z: number; length: number; width: number; height: number };
   containerInnerHeight: number;
@@ -132,6 +165,11 @@ export interface SnapVerticalResult {
   z: number;
   snapped: boolean;
   snapTargetValue?: number; // tọa độ MẶT PHẲNG NGANG đã khớp vào (sàn / nóc kiện dưới / trần)
+  // Kiện CỤ THỂ đang đỡ bên dưới khi z khớp vào floorZ do nó tạo ra — CHỈ có giá trị khi floorZ > 0
+  // (đang hạ xuống ĐÚNG 1 kiện khác, không phải sàn container — sàn không có "kiện cụ thể" nào để
+  // căn theo). Dùng ở DraggablePlacement.tsx để ưu tiên snap NGANG (X/Y) theo đúng kiện này thay vì
+  // theo mọi mặt tham chiếu khác không liên quan — xem giải thích phối hợp snap ngang/dọc ở đó.
+  floorSupportPlacement?: SnapBox3D;
 }
 
 /**
@@ -157,18 +195,27 @@ export function snapVerticalPosition(params: SnapVerticalParams): SnapVerticalRe
   // cả khi con trỏ kéo nhảy một bước lớn khiến candidate.z rơi THẲNG VÀO GIỮA kiện kia (candidate.z
   // không còn rõ ràng "đang ở trên" hay "đang ở dưới" nếu chỉ so 2 mặt) — tự phát hiện qua test:
   // so trực tiếp p.z + p.height <= candidate.z bỏ sót đúng trường hợp này.
-  const floorCandidates: number[] = [];
+  let floorZ = 0;
+  // Kiện tạo ra floorZ (nếu floorZ > 0) — theo dõi SONG SONG với floorZ (thay vì tính floorZ bằng
+  // Math.max(0, ...floorCandidates) rồi phải dò lại xem kiện nào tạo ra nó) để trả về được đúng 1
+  // kiện cụ thể cho phần snap ngang phối hợp ở DraggablePlacement.tsx.
+  let floorSupportPlacement: SnapBox3D | undefined;
   const ceilingCandidates: number[] = [];
   for (const p of otherPlacements) {
     if (!footprintOverlaps(candidate, p)) continue;
     const pCenterZ = p.z + p.height / 2;
     if (candidateCenterZ >= pCenterZ) {
-      floorCandidates.push(p.z + p.height); // kiện này đỡ bên dưới -> đứng lên trên mặt nóc nó
+      // kiện này đỡ bên dưới -> đứng lên trên mặt nóc nó (mặt nóc CAO NHẤT trong số các kiện đỡ
+      // thắng, giống hệt Math.max(0, ...floorCandidates) trước đây).
+      const topZ = p.z + p.height;
+      if (topZ > floorZ) {
+        floorZ = topZ;
+        floorSupportPlacement = p;
+      }
     } else {
       ceilingCandidates.push(p.z - candidate.height); // kiện này chặn bên trên -> treo dưới mặt đáy nó
     }
   }
-  const floorZ = Math.max(0, ...floorCandidates);
   const ceilingFromAbove = ceilingCandidates.length > 0 ? Math.min(...ceilingCandidates) : Infinity;
   const ceilingZ = Math.max(floorZ, Math.min(containerInnerHeight - candidate.height, ceilingFromAbove));
 
@@ -176,7 +223,7 @@ export function snapVerticalPosition(params: SnapVerticalParams): SnapVerticalRe
 
   const threshold = computeSnapThreshold(candidate.height);
   if (Math.abs(z - floorZ) <= threshold) {
-    return { z: floorZ, snapped: true, snapTargetValue: floorZ };
+    return { z: floorZ, snapped: true, snapTargetValue: floorZ, floorSupportPlacement };
   }
   // Mặt phẳng "trần" của cột không gian này — chính là containerInnerHeight thật nếu không có
   // kiện nào chặn phía trên, hoặc mặt đáy của kiện chặn phía trên nếu có (xem ceilingFromAbove).

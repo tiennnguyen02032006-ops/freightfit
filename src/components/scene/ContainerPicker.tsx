@@ -90,6 +90,7 @@ export function ContainerPicker({ label }: ContainerPickerProps) {
         className="container-picker-trigger"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
+        title={label}
       >
         <span className="scene-stats-bar-title">{label}</span>
         <span className="container-picker-caret" aria-hidden="true">▾</span>

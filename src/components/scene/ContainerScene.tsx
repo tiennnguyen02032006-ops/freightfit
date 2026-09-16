@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { ContactShadows, OrbitControls, PerspectiveCamera } from '@react-three/drei';
+import type { WebGLRenderer } from 'three';
 import { useAppStore } from '../../store';
 import { ContainerShell } from './ContainerShell';
 import { TruckDecoration } from './TruckDecoration';
@@ -14,6 +15,24 @@ import { StepSimulationControls } from './StepSimulationControls';
 import { clampStepIndex, getVisiblePlacements } from './stepSimulation';
 import { SceneCornerCluster } from './SceneCornerCluster';
 import { ContainerTabsBar } from './ContainerTabsBar';
+import { downloadPackingSolutionPdf, type ContainerReportInput } from '../../export/exportPdf';
+
+// Đợi vài animation frame sau khi đổi activeContainerInstanceId (store) trước khi chụp canvas —
+// cần thời gian để React commit lại danh sách placements mới VÀ Three.js render lại đúng khung
+// hình đó (Canvas frameloop mặc định "always" tự vẽ lại mỗi frame, nhưng vẫn cần chờ ít nhất
+// 1-2 frame để mesh mới kịp lên khung hình trước khi renderer.domElement.toDataURL() đọc buffer).
+function waitAnimationFrames(count: number): Promise<void> {
+  return new Promise((resolve) => {
+    const step = (remaining: number) => {
+      if (remaining <= 0) {
+        resolve();
+        return;
+      }
+      requestAnimationFrame(() => step(remaining - 1));
+    };
+    step(count);
+  });
+}
 
 // Highlight "vừa thêm vào" tự tắt sau chừng này (ms) — xem CargoBox3D.tsx `highlighted`.
 const HIGHLIGHT_DURATION_MS = 1600;
@@ -71,12 +90,18 @@ export function ContainerScene() {
   const swapPlacements = useAppStore((s) => s.swapPlacements);
   const editNotice = useAppStore((s) => s.editNotice);
   const clearEditNotice = useAppStore((s) => s.clearEditNotice);
+  const lastContainerSuggestion = useAppStore((s) => s.lastContainerSuggestion);
+  const applyContainerSuggestion = useAppStore((s) => s.applyContainerSuggestion);
 
   const [preset, setPreset] = useState<CameraPreset>('ISOMETRIC');
   const [highlightedPlacementId, setHighlightedPlacementId] = useState<string | null>(null);
   // Div .scene-container thật — DraggableStatsBar.tsx dùng làm khung tọa độ tham chiếu để kẹp vị
   // trí kéo trong vùng nhìn thấy, và làm nơi portal dải thông tin ra khi đã có vị trí tùy chỉnh.
   const sceneContainerRef = useRef<HTMLDivElement>(null);
+  // WebGLRenderer thật của Canvas (gán qua onCreated bên dưới) — dùng để chụp ảnh sơ đồ xếp hàng
+  // 3D lúc xuất PDF (renderer.domElement.toDataURL), xem handleExportPdf.
+  const rendererRef = useRef<WebGLRenderer | null>(null);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   const isSimulating = viewMode === 'STEP_SIMULATION';
   // Chỉnh tay (kéo/xoay/hoán đổi) chỉ có ý nghĩa khi đang xem TOÀN BỘ phương án, không phải lúc
@@ -101,6 +126,21 @@ export function ContainerScene() {
   // gộp chung mọi container trong solution (xem PackingSolution.cgWarnings), phải tự lọc theo
   // containerInstanceId, không thì cảnh báo của container khác sẽ lẫn vào.
   const cgWarnings = container ? (solution?.cgWarnings ?? []).filter((w) => w.containerInstanceId === container.id) : [];
+
+  // Template DÙNG ĐỂ VẼ/tính stats của container đang xem — tra theo ĐÚNG container.templateId
+  // thay vì luôn dùng containerTemplate (template đang CHỌN trong thư viện), vì từ khi có gợi ý
+  // đổi xe cho container cuối (applyContainerSuggestion, xem solutionSlice.ts) container CUỐI có
+  // thể thuộc 1 template KHÁC hẳn các container còn lại trong cùng solution (vd container 1-2 là
+  // 40ft HC, container 3 đã đổi sang xe tải nhỏ) — containerTemplate vẫn giữ nguyên ý nghĩa "đang
+  // chọn trong thư viện" cho ContainerPicker/nút "Tạo phương án", KHÔNG đổi theo container đang xem.
+  const activeContainerTemplate = container
+    ? (containerLibrary.find((t) => t.id === container.templateId) ?? containerTemplate)
+    : containerTemplate;
+  const lastContainerInSolution = solutionContainers[solutionContainers.length - 1];
+  const isViewingLastContainer = !!container && !!lastContainerInSolution && container.id === lastContainerInSolution.id;
+  const suggestedTemplateName = lastContainerSuggestion
+    ? containerLibrary.find((t) => t.id === lastContainerSuggestion.suggestedTemplateId)?.name
+    : undefined;
 
   const templatesById = useMemo(() => new Map(cargoTemplates.map((t) => [t.id, t])), [cargoTemplates]);
 
@@ -189,39 +229,76 @@ export function ContainerScene() {
     selectPlacement(placementId);
   };
 
+  // Xuất PDF: lần lượt xem qua TỪNG container trong solution (đổi activeContainerInstanceId qua
+  // store, giống hệt bấm tab ContainerTabsBar) để chụp đúng ảnh 3D của từng container, rồi khôi
+  // phục lại container đang xem ban đầu sau khi xong — người dùng không thấy khung nhìn "nhảy"
+  // qua lại vì mỗi lần đổi + chụp chỉ mất vài frame.
+  const handleExportPdf = async () => {
+    if (!solution || !containerTemplate || solutionContainers.length === 0 || isExportingPdf) return;
+    const originalActiveId = activeContainerInstanceId;
+    setIsExportingPdf(true);
+    try {
+      const reports: ContainerReportInput[] = [];
+      for (const containerInstance of solutionContainers) {
+        setActiveContainer(containerInstance.id);
+        await waitAnimationFrames(3);
+        const imageDataUrl = rendererRef.current?.domElement.toDataURL('image/png');
+        reports.push({
+          // Template thật của TỪNG container (không phải lúc nào cũng == containerTemplate đang
+          // chọn — xem giải thích activeContainerTemplate ở trên: container cuối có thể đã đổi
+          // sang loại khác qua applyContainerSuggestion), để báo cáo PDF hiện đúng kích thước/tải
+          // trọng của từng container thay vì lặp lại 1 template cho tất cả.
+          containerTemplate: containerLibrary.find((t) => t.id === containerInstance.templateId) ?? containerTemplate,
+          container: containerInstance,
+          cargoTemplatesById: templatesById,
+          imageDataUrl,
+        });
+      }
+      await downloadPackingSolutionPdf(reports);
+    } finally {
+      setActiveContainer(originalActiveId);
+      setIsExportingPdf(false);
+    }
+  };
+
   if (!containerTemplate) {
     return <div className="scene-empty">Chưa có container nào trong thư viện.</div>;
   }
 
+  // Toàn bộ hình học cảnh (vách/sàn/camera/ánh sáng...) dùng activeContainerTemplate (template
+  // THẬT của container đang xem, có thể khác containerTemplate đang chọn trong thư viện — xem giải
+  // thích activeContainerTemplate ở trên), để container/xe cuối sau khi đổi qua
+  // applyContainerSuggestion hiển thị ĐÚNG kích thước xe mới thay vì khung 3D cũ.
+  //
   // maxDim của riêng container (không tính xe) — chỉ dùng để tính độ dày vách/sàn, phải tách
   // biệt với sceneMaxDim (có tính xe) bên dưới dùng cho camera/ánh sáng/bóng đổ.
   const containerMaxDim = Math.max(
-    containerTemplate.innerLength,
-    containerTemplate.innerWidth,
-    containerTemplate.innerHeight,
+    activeContainerTemplate.innerLength,
+    activeContainerTemplate.innerWidth,
+    activeContainerTemplate.innerHeight,
   );
   const thickness = containerWallThickness(containerMaxDim);
   // Mặt đất thật nằm dưới đáy sàn (-thickness) một khoảng bằng khung gầm + bánh xe — xem
   // containerGeometry.ts. Đáy sàn (-thickness) giữ nguyên không đổi (mốc dùng cho tọa độ hàng
   // hóa), chỉ mặt đất bên dưới hạ xuống để chừa chỗ vẽ bánh/khung gầm.
-  const groundY = -thickness - vehicleGroundClearance(containerTemplate.innerHeight);
+  const groundY = -thickness - vehicleGroundClearance(activeContainerTemplate.innerHeight);
 
-  const totalLength = containerTemplate.innerLength + thickness + TRUCK_LENGTH_MM;
+  const totalLength = activeContainerTemplate.innerLength + thickness + TRUCK_LENGTH_MM;
   const totalHeightSpan =
-    containerTemplate.innerHeight + thickness + vehicleGroundClearance(containerTemplate.innerHeight);
-  const sceneMaxDim = Math.max(totalLength, containerTemplate.innerWidth, totalHeightSpan);
+    activeContainerTemplate.innerHeight + thickness + vehicleGroundClearance(activeContainerTemplate.innerHeight);
+  const sceneMaxDim = Math.max(totalLength, activeContainerTemplate.innerWidth, totalHeightSpan);
   // Tâm x của toàn cảnh (container + đầu xe) — dùng chung cho camera VÀ target OrbitControls
   // để hai bên luôn khớp nhau, tránh lệch khung nhìn.
   const sceneCenterX = totalLength / 2;
   // Tâm y của toàn cảnh THEO CHIỀU DỌC, tính từ mặt đất thật (dưới bánh xe) chứ không phải từ
   // đáy sàn container — nếu không, tâm nhìn sẽ lệch lên cao hơn thực tế và dễ cắt mất bánh xe ở
   // mép dưới khung hình, nhất là góc Side.
-  const sceneCenterY = (groundY + containerTemplate.innerHeight) / 2;
+  const sceneCenterY = (groundY + activeContainerTemplate.innerHeight) / 2;
 
   const [camX, camY, camZ] = cameraPositionFor(
     preset,
     sceneCenterX,
-    containerTemplate.innerWidth,
+    activeContainerTemplate.innerWidth,
     sceneCenterY,
     sceneMaxDim,
   );
@@ -256,10 +333,16 @@ export function ContainerScene() {
         <div className="scene-top-row">
           <CameraToolbar onSelectPreset={setPreset} />
           <DraggableStatsBar
-            containerTemplate={containerTemplate}
+            containerTemplate={activeContainerTemplate}
             container={container}
             cgWarnings={cgWarnings}
             sceneContainerRef={sceneContainerRef}
+            canExportPdf={!!solution}
+            isExportingPdf={isExportingPdf}
+            onExportPdf={handleExportPdf}
+            suggestion={isViewingLastContainer ? lastContainerSuggestion : null}
+            suggestedTemplateName={suggestedTemplateName}
+            onApplySuggestion={applyContainerSuggestion}
           />
         </div>
       </div>
@@ -268,7 +351,14 @@ export function ContainerScene() {
         (linear-gradient xám sáng) của .scene-container phía sau — cho hiệu ứng chuyển màu nhẹ
         mà không cần vẽ gradient bằng shader.
       */}
-      <Canvas shadows gl={{ alpha: true }} onPointerMissed={() => selectPlacement(null)}>
+      <Canvas
+        shadows
+        gl={{ alpha: true, preserveDrawingBuffer: true }}
+        onCreated={(state) => {
+          rendererRef.current = state.gl;
+        }}
+        onPointerMissed={() => selectPlacement(null)}
+      >
         <PerspectiveCamera makeDefault position={[camX, camY, camZ]} fov={50} near={near} far={far} />
         {/*
           makeDefault: đăng ký làm "controls mặc định" của scene (state.controls trong r3f) — nhờ
@@ -279,7 +369,7 @@ export function ContainerScene() {
         */}
         <OrbitControls
           makeDefault
-          target={[sceneCenterX, sceneCenterY, containerTemplate.innerWidth / 2]}
+          target={[sceneCenterX, sceneCenterY, activeContainerTemplate.innerWidth / 2]}
         />
         {/* Ánh sáng dịu: hemisphere cho sáng đều nhẹ nhàng + 1 directional nhẹ đổ bóng mềm,
             không dùng ánh sáng gắt như trước. */}
@@ -301,7 +391,7 @@ export function ContainerScene() {
 
         {/* Đổ bóng mềm trên mặt đất, canh giữa cả cụm container + đầu xe */}
         <ContactShadows
-          position={[totalLength / 2, groundY, containerTemplate.innerWidth / 2]}
+          position={[totalLength / 2, groundY, activeContainerTemplate.innerWidth / 2]}
           opacity={0.35}
           scale={sceneMaxDim * 3}
           blur={2.8}
@@ -309,14 +399,14 @@ export function ContainerScene() {
         />
 
         <ContainerShell
-          length={containerTemplate.innerLength}
-          width={containerTemplate.innerWidth}
-          height={containerTemplate.innerHeight}
+          length={activeContainerTemplate.innerLength}
+          width={activeContainerTemplate.innerWidth}
+          height={activeContainerTemplate.innerHeight}
         />
         <TruckDecoration
-          length={containerTemplate.innerLength}
-          width={containerTemplate.innerWidth}
-          height={containerTemplate.innerHeight}
+          length={activeContainerTemplate.innerLength}
+          width={activeContainerTemplate.innerWidth}
+          height={activeContainerTemplate.innerHeight}
         />
         {visiblePlacements.map((placement) => {
           const isSelected = placement.id === selectedPlacementId;
@@ -332,9 +422,11 @@ export function ContainerScene() {
                 onSelect={handleSelectPlacement}
                 onCommitMove={(target) => movePlacement(container.id, placement.id, target)}
                 onRotateAxis={(axis) => rotatePlacement(container.id, placement.id, axis)}
+                clearEditNotice={clearEditNotice}
                 rotateModeActive={rotateModeActive}
-                containerTemplate={containerTemplate}
+                containerTemplate={activeContainerTemplate}
                 otherPlacements={container.placements.filter((p) => p.id !== placement.id)}
+                templatesById={templatesById}
               />
             );
           }
@@ -350,7 +442,7 @@ export function ContainerScene() {
             />
           );
         })}
-        <CenterOfGravityMarker container={container} containerTemplate={containerTemplate} />
+        <CenterOfGravityMarker container={container} containerTemplate={activeContainerTemplate} />
       </Canvas>
       {editNotice && <div className="edit-notice-banner">⚠ {editNotice}</div>}
       <SceneCornerCluster

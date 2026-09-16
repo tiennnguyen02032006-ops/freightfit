@@ -25,6 +25,11 @@ export interface RootExtraState {
   editHistory: EditHistoryState;
   currentStepIndex: number;
   ui: UiState;
+  // Quãng đường (km) nhập ở TransportCostPanel — nâng lên store (thay vì state cục bộ riêng của
+  // panel đó trước đây) để suggestBetterContainer.ts cũng đọc được cùng giá trị khi so sánh chi
+  // phí giữa các loại container/xe (xem domain/types.ts AppState.transportDistanceKm).
+  transportDistanceKm: number;
+  setTransportDistanceKm: (km: number) => void;
   selectPlacement: (placementId: string | null) => void;
   setViewMode: (mode: UiState['viewMode']) => void;
   setCurrentStepIndex: (index: number) => void;
@@ -51,6 +56,8 @@ export const useAppStore = create<RootStore>()((set, get, api) => ({
   editHistory: { actions: [], currentIndex: -1 },
   currentStepIndex: 0,
   ui: { viewMode: '3D', selectedPlacementId: null, isLoading: false, rotateModeActive: false },
+  transportDistanceKm: 0,
+  setTransportDistanceKm: (km) => set({ transportDistanceKm: km }),
   // Bỏ chọn kiện hàng (placementId = null) luôn tắt kèm chế độ xoay — mũi tên xoay chỉ có ý nghĩa
   // khi đang chọn đúng 1 kiện, giữ chế độ xoay bật cho 1 lựa chọn "trống" sẽ chỉ gây rối.
   selectPlacement: (placementId) =>

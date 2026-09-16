@@ -46,19 +46,53 @@ export async function parseExcelFile(file: File): Promise<CargoImportRow[]> {
   return rows.map((row, index) => toImportRow(row, index));
 }
 
+/**
+ * Chuẩn hoá tên cột để so khớp không phân biệt hoa/thường, khoảng trắng thừa hay ký tự BOM
+ * (thường gặp ở đầu cột đầu tiên khi export CSV từ Excel).
+ */
+function normalizeHeaderKey(key: string): string {
+  return key
+    .replace(/^﻿/, '')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Lấy giá trị của một cột trong dòng dữ liệu, chấp nhận nhiều biến thể tên cột (không phân biệt
+ * hoa/thường, có khoảng trắng thừa, tên tiếng Anh lẫn tiếng Việt).
+ */
+function getField(row: Record<string, unknown>, aliases: string[]): unknown {
+  const normalizedAliases = aliases.map(normalizeHeaderKey);
+  for (const rawKey of Object.keys(row)) {
+    if (normalizedAliases.includes(normalizeHeaderKey(rawKey))) {
+      return row[rawKey];
+    }
+  }
+  return undefined;
+}
+
 function toImportRow(row: Record<string, unknown>, index: number): CargoImportRow {
-  const colorCell = row.color ?? row.Color ?? row['Màu'] ?? row['màu'];
+  const colorCell = getField(row, ['color', 'Màu', 'mau']);
+
+  // Một số file mẫu gộp chung SKU và tên hàng vào 1 cột (vd "Tên mặt hàng/sku"). Khi đó dùng
+  // luôn giá trị này cho cả sku lẫn name nếu không có cột sku/name riêng.
+  const combinedCell = getField(row, ['Tên mặt hàng/sku', 'ten mat hang/sku', 'ten mat hang / sku']);
+  const skuCell = getField(row, ['sku', 'Mã SKU', 'ma sku', 'Mã hàng', 'ma hang']);
+  const nameCell = getField(row, ['name', 'Tên hàng', 'ten hang', 'Tên', 'ten']);
 
   const importRow: CargoImportRow = {
     rowIndex: index,
-    sku: String(row.sku ?? row.SKU ?? '').trim(),
-    name: String(row.name ?? row.Name ?? '').trim(),
-    length: Number(row.length ?? row.Length ?? 0),
-    width: Number(row.width ?? row.Width ?? 0),
-    height: Number(row.height ?? row.Height ?? 0),
-    weight: Number(row.weight ?? row.Weight ?? 0),
-    quantity: Number(row.quantity ?? row.Quantity ?? 0),
-    rotationRaw: row.rotation ? String(row.rotation) : undefined,
+    sku: String(skuCell ?? combinedCell ?? '').trim(),
+    name: String(nameCell ?? combinedCell ?? '').trim(),
+    length: Number(getField(row, ['length', 'Dài', 'dai', 'L']) ?? 0),
+    width: Number(getField(row, ['width', 'Rộng', 'rong', 'W']) ?? 0),
+    height: Number(getField(row, ['height', 'Cao', 'Chiều cao', 'chieu cao', 'H']) ?? 0),
+    weight: Number(getField(row, ['weight', 'Trọng lượng', 'trong luong', 'Khối lượng', 'khoi luong']) ?? 0),
+    quantity: Number(getField(row, ['quantity', 'Số lượng', 'so luong', 'SL']) ?? 0),
+    rotationRaw: (() => {
+      const v = getField(row, ['rotation', 'Xoay']);
+      return v ? String(v) : undefined;
+    })(),
     colorRaw: colorCell ? String(colorCell) : undefined,
     valid: true,
   };

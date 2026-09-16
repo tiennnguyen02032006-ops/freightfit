@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeAxisSnap,
+  computeFloorZ,
   computeSnapThreshold,
   snapCandidatePosition,
   snapVerticalPosition,
   type SnapBox3D,
 } from '../../src/engine/snapping';
-import { SNAP_THRESHOLD_MIN_MM, SNAP_THRESHOLD_RATIO } from '../../src/engine/config';
+import { MIN_SUPPORT_RATIO, SNAP_THRESHOLD_MIN_MM, SNAP_THRESHOLD_RATIO } from '../../src/engine/config';
+import { computeSupportRatio, findSupportingPlacements, meetsMinSupportRatio } from '../../src/engine/constraints/support';
+import { makePlacement } from '../fixtures/placement';
 
 describe('computeSnapThreshold', () => {
   it('kiện đủ lớn -> ngưỡng = 5% kích thước (tỉ lệ % làm chủ)', () => {
@@ -170,6 +173,25 @@ describe('snapVerticalPosition', () => {
     expect(result.z).toBe(300);
   });
 
+  it('snap khít lên nóc 1 kiện dưới dù footprint chỉ chồng lấn RẤT ÍT (< ngưỡng support hợp lệ) — CHỨNG MINH snapVerticalPosition KHÔNG tự kiểm tra support ratio, chỉ xét khoảng cách hình học (xem DraggablePlacement.tsx: đây là lý do KHÔNG được dùng .snapped làm tín hiệu "hợp lệ" mà không revalidate riêng)', () => {
+    // Kiện dưới chỉ chồng lấn 40x300 trên tổng 400x300 chân đế kiện đang kéo (~10% diện tích, thấp
+    // hơn hẳn MIN_SUPPORT_RATIO 0.75) — nhưng vẫn nằm trong ngưỡng snap hình học (đỉnh cách 20mm).
+    const belowTinyOverlap: SnapBox3D = { x: 360, y: 0, z: 0, length: 400, width: 300, height: 300 };
+    const result = snapVerticalPosition({
+      candidate: { ...box, z: 320 }, // box.x=0..400, below.x=360..760 -> chồng lấn x chỉ 360..400 (40mm)
+      containerInnerHeight: 2400,
+      otherPlacements: [belowTinyOverlap],
+    });
+    // snapVerticalPosition VẪN báo snapped=true, hút khít z=300 — dù support ratio thực tế (nếu
+    // tính bằng computeSupportRatio) chỉ ~10%, dưới xa ngưỡng hợp lệ. Đây chính là gốc rễ bug: nếu
+    // UI coi "snapped" là tín hiệu "vị trí hợp lệ" mà không revalidate riêng qua
+    // revalidatePlacement (như đã sửa ở DraggablePlacement.tsx — SnapFaceHighlight giờ chỉ hiện khi
+    // dragValidity === 'valid'), người dùng sẽ thấy "tô xanh" ở 1 vị trí thực ra sẽ bị từ chối vì
+    // LOW_SUPPORT khi commit.
+    expect(result.snapped).toBe(true);
+    expect(result.z).toBe(300);
+  });
+
   it('footprint KHÔNG chồng lên nhau -> kiện bên cạnh không ảnh hưởng, sàn vẫn là z=0', () => {
     // Kiện khác ở xa (x=2000..2400), footprint không chồng lên kiện đang kéo (x=0..400).
     const faraway: SnapBox3D = { x: 2000, y: 0, z: 0, length: 400, width: 300, height: 300 };
@@ -205,5 +227,156 @@ describe('snapVerticalPosition', () => {
       otherPlacements: [above],
     });
     expect(result.z).toBe(300);
+  });
+
+  it('trả về đúng floorSupportPlacement khi z khớp vào floorZ do 1 kiện cụ thể tạo ra', () => {
+    const below: SnapBox3D = { x: 0, y: 0, z: 0, length: 400, width: 300, height: 300 };
+    const result = snapVerticalPosition({
+      candidate: { ...box, z: 320 }, // cách đỉnh kiện dưới (300) 20mm < 30mm ngưỡng
+      containerInnerHeight: 2400,
+      otherPlacements: [below],
+    });
+    expect(result.snapped).toBe(true);
+    expect(result.z).toBe(300);
+    expect(result.floorSupportPlacement).toBe(below);
+  });
+
+  it('KHÔNG trả floorSupportPlacement khi z khớp vào SÀN CONTAINER (floorZ=0) — sàn không phải 1 kiện cụ thể', () => {
+    const result = snapVerticalPosition({
+      candidate: { ...box, z: 15 },
+      containerInnerHeight: 2400,
+      otherPlacements: [],
+    });
+    expect(result.snapped).toBe(true);
+    expect(result.z).toBe(0);
+    expect(result.floorSupportPlacement).toBeUndefined();
+  });
+
+  it('trong nhiều kiện đỡ chồng chéo, floorSupportPlacement là đúng kiện tạo ra floorZ CAO NHẤT (kiện thật sự được đứng lên)', () => {
+    const lowerBelow: SnapBox3D = { x: 0, y: 0, z: 0, length: 400, width: 300, height: 150 };
+    const higherBelow: SnapBox3D = { x: 0, y: 0, z: 0, length: 400, width: 300, height: 300 };
+    const result = snapVerticalPosition({
+      candidate: { ...box, z: 305 },
+      containerInnerHeight: 2400,
+      otherPlacements: [lowerBelow, higherBelow],
+    });
+    expect(result.z).toBe(300);
+    expect(result.floorSupportPlacement).toBe(higherBelow);
+  });
+});
+
+describe('phối hợp snap ngang + dọc khi hạ xuống 1 mặt đỡ cụ thể (bug đã sửa)', () => {
+  // Mô phỏng ĐÚNG cách DraggablePlacement.tsx phối hợp 2 hàm sau khi sửa: dò snap dọc bằng vị trí
+  // ngang RAW để lấy floorSupportPlacement, rồi snap ngang CHỈ nhắm kiện đó (thay vì mọi kiện khác)
+  // trước khi chốt lại snap dọc lần cuối — so sánh với cách CŨ (snap ngang luôn nhắm TOÀN BỘ
+  // otherPlacements, không biết gì về kiện đang chuẩn bị đỡ) để chứng minh khác biệt thật sự.
+  const support = makePlacement({ id: 'support', x: 0, y: 0, z: 0, length: 300, width: 300, height: 200 });
+  // 2 kiện "decoy" hoàn toàn KHÔNG LIÊN QUAN tới việc hạ xuống (z rất cao, không chồng chéo tầng
+  // đang kéo tới) nhưng vô tình có MÉP gần vị trí con trỏ hơn cả support — đúng kịch bản khiến snap
+  // ngang KIỂU CŨ (không biết ưu tiên support) bị "hút" nhầm sang chúng.
+  const decoyX = makePlacement({ id: 'decoy-x', x: 45, y: 0, z: 600, length: 300, width: 300, height: 200 });
+  const decoyY = makePlacement({ id: 'decoy-y', x: 0, y: 45, z: 600, length: 300, width: 300, height: 200 });
+
+  const dragged = { length: 300, width: 300, height: 200 };
+  const containerInnerLength = 2000;
+  const containerInnerWidth = 1000;
+  const containerInnerHeight = 1000;
+
+  // Con trỏ đang kéo kiện hàng tới gần (x=25,y=25,z=175) — đủ gần cả support LẪN 2 decoy để tất cả
+  // đều là ứng viên snap hợp lệ trong ngưỡng (threshold 300mm-item = 30mm).
+  const raw = { x: 25, y: 25, z: 175 };
+
+  it('CÁCH CŨ (snap ngang nhắm TOÀN BỘ otherPlacements, không ưu tiên support) -> chân đế lệch sang decoy, support ratio KHÔNG đạt ngưỡng', () => {
+    const allPlacements = [support, decoyX, decoyY];
+
+    const horizontalOld = snapCandidatePosition({
+      candidate: { x: raw.x, y: raw.y, length: dragged.length, width: dragged.width },
+      containerInnerLength,
+      containerInnerWidth,
+      otherPlacements: allPlacements,
+    });
+    // Snap ngang bị decoy "hút" (mép decoy gần con trỏ hơn mép support) -> lệch khỏi (0,0).
+    expect(horizontalOld.x).toBe(45);
+    expect(horizontalOld.y).toBe(45);
+
+    // z = support.height (200) — ĐANG ĐỨNG TRÊN NÓC support, không phải sàn container (z=0 sẽ luôn
+    // trả support ratio 1.0 bất kể chân đế, xem computeSupportRatio — không phải kịch bản đang test).
+    const finalBox = { x: horizontalOld.x, y: horizontalOld.y, z: support.height, ...dragged };
+    const supportingPlacements = findSupportingPlacements(finalBox, [support]);
+    const supportRatio = computeSupportRatio(finalBox, supportingPlacements);
+
+    expect(supportRatio).toBeCloseTo(0.7225, 3);
+    expect(meetsMinSupportRatio(supportRatio, MIN_SUPPORT_RATIO)).toBe(false); // < 0.75 -> KHÔNG đạt
+  });
+
+  it('CÁCH MỚI (dò floorSupportPlacement trước, snap ngang chỉ nhắm ĐÚNG support đó) -> chân đế chồng khít hoàn toàn, support ratio đạt tối đa', () => {
+    const allPlacements = [support, decoyX, decoyY];
+
+    // Bước 1: dò snap dọc bằng vị trí ngang RAW để lấy floorSupportPlacement.
+    const verticalProbe = snapVerticalPosition({
+      candidate: { x: raw.x, y: raw.y, z: raw.z, ...dragged },
+      containerInnerHeight,
+      otherPlacements: allPlacements,
+    });
+    expect(verticalProbe.floorSupportPlacement).toBe(support);
+
+    // Bước 2: snap ngang CHỈ nhắm đúng support vừa dò được (đúng thay đổi ở DraggablePlacement.tsx).
+    const horizontalNew = snapCandidatePosition({
+      candidate: { x: raw.x, y: raw.y, length: dragged.length, width: dragged.width },
+      containerInnerLength,
+      containerInnerWidth,
+      otherPlacements: [support],
+    });
+    expect(horizontalNew.x).toBe(0);
+    expect(horizontalNew.y).toBe(0);
+
+    const finalBox = { x: horizontalNew.x, y: horizontalNew.y, z: support.height, ...dragged };
+    const supportingPlacements = findSupportingPlacements(finalBox, [support]);
+    const supportRatio = computeSupportRatio(finalBox, supportingPlacements);
+
+    expect(supportRatio).toBe(1); // chồng khít hoàn toàn lên support
+    expect(meetsMinSupportRatio(supportRatio, MIN_SUPPORT_RATIO)).toBe(true);
+  });
+});
+
+describe('computeFloorZ — kiểu "trọng lực" (gravity-drop) dùng bởi DraggablePlacement.tsx', () => {
+  const supportA: SnapBox3D = { x: 0, y: 0, z: 0, length: 400, width: 300, height: 200 };
+  const dragged = { length: 400, width: 300, height: 200 };
+
+  it('không có kiện nào đỡ (sàn trống) -> floorZ = 0, floorSupportPlacement undefined', () => {
+    const result = computeFloorZ({ x: 1000, y: 0, ...dragged }, []);
+    expect(result.floorZ).toBe(0);
+    expect(result.floorSupportPlacement).toBeUndefined();
+  });
+
+  it('footprint chồng khít lên 1 kiện đỡ -> floorZ = đúng mặt nóc kiện đó (mô phỏng "đang ở tầng 2")', () => {
+    const result = computeFloorZ({ x: 0, y: 0, ...dragged }, [supportA]);
+    expect(result.floorZ).toBe(200); // = supportA.height
+    expect(result.floorSupportPlacement).toBe(supportA);
+  });
+
+  it('kéo NGANG ra khỏi vùng đang đỡ (footprint không còn chồng lên supportA) -> floorZ tự động rơi về 0 (sàn) — đúng kịch bản yêu cầu: hạ tầng 2 -> 1 chỉ bằng cách kéo ngang', () => {
+    // supportA chiếm x:[0,400) y:[0,300) — kéo ngang hẳn sang x:[1000,1400) (không còn chồng lấn).
+    const result = computeFloorZ({ x: 1000, y: 0, ...dragged }, [supportA]);
+    expect(result.floorZ).toBe(0); // rơi thẳng xuống sàn — KHÔNG giữ nguyên độ cao tầng 2 cũ
+    expect(result.floorSupportPlacement).toBeUndefined();
+  });
+
+  it('kéo ngang vào đúng phía trên 1 kiện KHÁC CAO HƠN -> floorZ tự động lên đúng nóc kiện đó (đối xứng với chiều hạ xuống — không bị coi nhầm là "chặn trên" như snapVerticalPosition cũ)', () => {
+    // supportB CAO HƠN hẳn chiều cao/2 của dragged — đây chính là trường hợp snapVerticalPosition
+    // (thiết kế cho model kéo Z tự do) sẽ phân loại SAI thành "chặn trên" nếu bị ép z:0, buộc phải
+    // có computeFloorZ riêng cho đúng ngữ nghĩa trọng lực (không có khái niệm ceiling).
+    const supportB: SnapBox3D = { x: 1000, y: 0, z: 0, length: 400, width: 300, height: 350 };
+    const result = computeFloorZ({ x: 1000, y: 0, ...dragged }, [supportA, supportB]);
+    expect(result.floorZ).toBe(350); // = supportB.height, tự động LÊN tầng cao hơn
+    expect(result.floorSupportPlacement).toBe(supportB);
+  });
+
+  it('nhiều kiện đỡ chồng chéo footprint -> floorZ là mặt nóc CAO NHẤT trong số chúng (không lọt xuống dưới bất kỳ kiện nào)', () => {
+    const lower: SnapBox3D = { x: 0, y: 0, z: 0, length: 400, width: 300, height: 150 };
+    const higher: SnapBox3D = { x: 0, y: 0, z: 0, length: 400, width: 300, height: 300 };
+    const result = computeFloorZ({ x: 0, y: 0, ...dragged }, [lower, higher]);
+    expect(result.floorZ).toBe(300);
+    expect(result.floorSupportPlacement).toBe(higher);
   });
 });

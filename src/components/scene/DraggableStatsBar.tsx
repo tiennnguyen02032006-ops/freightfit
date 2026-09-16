@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import type { CenterOfGravityWarning, ContainerInstance, ContainerTemplate } from '../../domain/types';
+import type { CenterOfGravityWarning, ContainerInstance, ContainerSuggestion, ContainerTemplate } from '../../domain/types';
 import { SceneStatsBar } from './SceneStatsBar';
 
 const STORAGE_KEY = 'freightfit.sceneStatsBarPosition';
@@ -47,6 +47,17 @@ interface DraggableStatsBarProps {
   // kẹp vị trí kéo trong vùng nhìn thấy, và (b) nơi portal dải thông tin ra khi đã có vị trí tùy
   // chỉnh (thoát khỏi hàng flex .scene-top-row mặc định).
   sceneContainerRef: RefObject<HTMLDivElement | null>;
+  // Nút "Xuất PDF" — chỉ truyền tiếp xuống SceneStatsBar, không tự biết gì về cách chụp ảnh
+  // 3D/dựng PDF (xem ContainerScene.tsx handleExportPdf + src/export/exportPdf.ts).
+  canExportPdf: boolean;
+  isExportingPdf: boolean;
+  onExportPdf: () => void;
+  // Gợi ý đổi loại container/xe cho container ĐANG XEM — ContainerScene.tsx chỉ truyền khác null
+  // khi container đang xem CHÍNH LÀ container cuối cùng của solution (xem
+  // ContainerScene.tsx isViewingLastContainer), nên component ở đây không cần tự kiểm tra lại.
+  suggestion: ContainerSuggestion | null;
+  suggestedTemplateName: string | undefined;
+  onApplySuggestion: () => void;
 }
 
 /**
@@ -70,7 +81,18 @@ interface DraggableStatsBarProps {
  * `clampToContainer` giới hạn trong [0, sceneContainer.width/height - kích thước dải] — không bao
  * giờ để dải trôi ra ngoài khung 3D, kể cả khi cửa sổ co lại sau khi đã có vị trí tùy chỉnh.
  */
-export function DraggableStatsBar({ containerTemplate, container, cgWarnings, sceneContainerRef }: DraggableStatsBarProps) {
+export function DraggableStatsBar({
+  containerTemplate,
+  container,
+  cgWarnings,
+  sceneContainerRef,
+  canExportPdf,
+  isExportingPdf,
+  onExportPdf,
+  suggestion,
+  suggestedTemplateName,
+  onApplySuggestion,
+}: DraggableStatsBarProps) {
   const [position, setPosition] = useState<Position | null>(() => loadStoredPosition());
   // Đợi component thật sự mount xong rồi mới portal — đảm bảo sceneContainerRef.current (do
   // ContainerScene.tsx gắn) chắc chắn đã sẵn sàng trước khi render lần đầu ở chế độ tùy chỉnh
@@ -156,6 +178,12 @@ export function DraggableStatsBar({ containerTemplate, container, cgWarnings, sc
         container={container}
         cgWarnings={cgWarnings}
         dragHandle={dragHandle}
+        canExportPdf={canExportPdf}
+        isExportingPdf={isExportingPdf}
+        onExportPdf={onExportPdf}
+        suggestion={suggestion}
+        suggestedTemplateName={suggestedTemplateName}
+        onApplySuggestion={onApplySuggestion}
       />
     );
   }
@@ -170,6 +198,12 @@ export function DraggableStatsBar({ containerTemplate, container, cgWarnings, sc
       container={container}
       cgWarnings={cgWarnings}
       dragHandle={dragHandle}
+      canExportPdf={canExportPdf}
+      isExportingPdf={isExportingPdf}
+      onExportPdf={onExportPdf}
+      suggestion={suggestion}
+      suggestedTemplateName={suggestedTemplateName}
+      onApplySuggestion={onApplySuggestion}
       style={{ position: 'absolute', left: position.x, top: position.y, zIndex: 1 }}
     />,
     portalTarget,

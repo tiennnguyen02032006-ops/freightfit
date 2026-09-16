@@ -29,6 +29,11 @@ interface CargoBox3DProps {
   // stopPropagation() trong handleClick TRƯỚC KHI tia chạm tới được mũi tên, khiến việc bấm đầu mũi
   // tên hoàn toàn không có tác dụng (im lặng, không lỗi) dù mũi tên vẫn nhận hover bình thường.
   disableSelect?: boolean;
+  // Tô "xem trước" (ghost) trong lúc đang KÉO TAY di chuyển kiện hàng (DraggablePlacement.tsx) —
+  // 'valid' (xanh) nếu vị trí hiện tại (chưa thả chuột) hợp lệ theo revalidatePlacement, 'invalid'
+  // (đỏ) nếu không, để người dùng biết ngay mà không cần thả ra mới thấy báo lỗi. undefined = màu
+  // bình thường theo SKU (không đang kéo, hoặc chưa kịp tính validity ở lần di chuột đầu tiên).
+  previewTint?: 'valid' | 'invalid';
 }
 
 /**
@@ -49,6 +54,7 @@ export function CargoBox3D({
   highlighted = false,
   renderAtOrigin = false,
   disableSelect = false,
+  previewTint,
 }: CargoBox3DProps) {
   // Màu lấy trực tiếp từ CargoTemplate.color (tự gán khi tạo hoặc người dùng tự chỉnh qua
   // color picker trong AddCargoPanel) — đổi màu ở đó sẽ tự phản ánh lên đây ngay vì cùng đọc
@@ -66,12 +72,16 @@ export function CargoBox3D({
         placement.z + placement.height / 2,
         placement.y + placement.width / 2,
       ];
-  const edgeColor = highlighted ? '#ffe066' : selected ? '#ffffff' : '#1c1c1c';
-  const edgeWidth = highlighted ? 3.5 : selected ? 2.5 : 1.25;
+  // previewTint (đang kéo tay, xem DraggablePlacement.tsx) ƯU TIÊN CAO NHẤT — luôn xảy ra độc lập
+  // với highlighted (hiệu ứng step-simulation, không bao giờ trùng thời điểm với kéo tay vì
+  // canEdit=false khi đang simulate) nên không cần lo tranh chấp giữa 2 hiệu ứng.
+  const previewColor = previewTint === 'valid' ? '#22c55e' : previewTint === 'invalid' ? '#ef4444' : null;
+  const edgeColor = previewColor ?? (highlighted ? '#ffe066' : selected ? '#ffffff' : '#1c1c1c');
+  const edgeWidth = previewTint ? 3 : highlighted ? 3.5 : selected ? 2.5 : 1.25;
   // Phát sáng nhẹ (emissive) khi highlighted — chỉ dùng cho hiệu ứng "vừa thêm vào" tạm thời của
   // simulation, tự tắt sau vài giây (xem ContainerScene.tsx), không phải trạng thái `selected`.
-  const emissive = highlighted ? '#ffe066' : '#000000';
-  const emissiveIntensity = highlighted ? 0.6 : 0;
+  const emissive = previewColor ?? (highlighted ? '#ffe066' : '#000000');
+  const emissiveIntensity = previewTint ? 0.5 : highlighted ? 0.6 : 0;
 
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation();

@@ -65,6 +65,15 @@ export const PRIORITY_WEIGHTS: PriorityWeights = {
   upright: 6,
 };
 
+// Ngưỡng lấp đầy tối thiểu (0..1, theo tỷ lệ CAO HƠN giữa thể tích/tải trọng đã dùng) của
+// CONTAINER/XE CUỐI CÙNG trong 1 solution nhiều container — dưới ngưỡng này coi là "chỉ chở hàng
+// dư thừa", engine gợi ý đổi sang loại container/xe khác rẻ hơn/nhỏ hơn nhưng vẫn xếp vừa hết số
+// hàng đó (xem engine/optimization/suggestBetterContainer.ts). 35% được chọn làm mức "rõ ràng
+// lãng phí" — đủ thấp để không gợi ý sai khi container cuối vẫn còn kha khá hàng (50-60% vẫn là
+// mức dùng hợp lý, đổi xe không đáng), nhưng đủ cao để bắt được trường hợp điển hình "vài kiện lẻ
+// dư ra sau khi đã lấp đầy các container trước".
+export const LAST_CONTAINER_MIN_FILL_RATIO = 0.35;
+
 // Ngưỡng "hút khớp" (snap) khi kéo tay di chuyển kiện hàng trong khung 3D (xem
 // engine/snapping.ts) — áp dụng ĐỘC LẬP cho từng trục X/Z. Ngưỡng = max(tỉ lệ % cạnh đang kéo,
 // một mức tối thiểu cố định) để kiện rất nhỏ vẫn có vùng hút hợp lý (không quá bé đến mức không

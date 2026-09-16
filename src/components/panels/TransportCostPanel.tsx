@@ -6,18 +6,21 @@ import { formatNumber } from '../shared/formatUnits';
  * Thay thế panel "Đơn hàng & điểm giao" đã bỏ hẳn (xem cargoSlice.ts/domain/types.ts) — tính chi
  * phí vận chuyển ước tính dựa trên quãng đường nhập tay và đơn giá cước/giá container của loại
  * container ĐANG ĐƯỢC CHỌN trong thư viện (selectedContainerTemplateId, xem ContainerPicker.tsx).
- * Số km và 2 ô giá chỉ là state cục bộ (không lưu store/localStorage): 2 ô giá luôn tự nạp lại
- * theo giá gốc của loại container mỗi khi người dùng đổi loại, nhưng chỉnh tay ở đây chỉ áp dụng
- * TẠM THỜI cho lần tính hiện tại — không ghi ngược vào thư viện container.
+ * Số km nằm ở STORE (`transportDistanceKm`, không còn là state cục bộ như trước) để
+ * suggestBetterContainer.ts (gợi ý đổi xe cho container cuối) cũng dùng được cùng giá trị khi so
+ * sánh chi phí — xem domain/types.ts AppState.transportDistanceKm. 2 ô giá vẫn là state cục bộ:
+ * luôn tự nạp lại theo giá gốc của loại container mỗi khi người dùng đổi loại, chỉnh tay ở đây chỉ
+ * áp dụng TẠM THỜI cho lần tính hiện tại — không ghi ngược vào thư viện container.
  */
 export function TransportCostPanel() {
   const containerLibrary = useAppStore((s) => s.containerLibrary);
   const selectedContainerTemplateId = useAppStore((s) => s.selectedContainerTemplateId);
   const solution = useAppStore((s) => s.solution);
+  const km = useAppStore((s) => s.transportDistanceKm);
+  const setTransportDistanceKm = useAppStore((s) => s.setTransportDistanceKm);
 
   const selectedTemplate = containerLibrary.find((t) => t.id === selectedContainerTemplateId);
 
-  const [kmInput, setKmInput] = useState('');
   const [costPerKmInput, setCostPerKmInput] = useState('');
   const [costPerTripInput, setCostPerTripInput] = useState('');
 
@@ -27,7 +30,6 @@ export function TransportCostPanel() {
     setCostPerTripInput(selectedTemplate?.costPerTrip != null ? String(selectedTemplate.costPerTrip) : '');
   }, [selectedTemplate?.id]);
 
-  const km = Number(kmInput);
   const costPerKm = Number(costPerKmInput);
   const costPerTrip = Number(costPerTripInput);
 
@@ -53,8 +55,8 @@ export function TransportCostPanel() {
             type="number"
             min="0"
             step="any"
-            value={kmInput}
-            onChange={(e) => setKmInput(e.target.value)}
+            value={km === 0 ? '' : km}
+            onChange={(e) => setTransportDistanceKm(Number(e.target.value))}
           />
         </label>
       </div>
