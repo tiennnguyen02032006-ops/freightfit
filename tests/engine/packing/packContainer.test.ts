@@ -5,6 +5,7 @@ import { sortCargo } from '../../../src/engine/preprocessing/sortCargo';
 import { overlaps } from '../../../src/engine/constraints/collision';
 import { fitsInsideContainer } from '../../../src/engine/packing/extremePoints';
 import { PLACEMENT_SCORE_WEIGHTS } from '../../../src/engine/config';
+import type { ContainerTemplate } from '../../../src/domain/types';
 import { makeCargoTemplate } from '../../fixtures/cargo';
 import { smallTestContainer } from '../../fixtures/containers';
 
@@ -239,5 +240,89 @@ describe('packContainer (integration)', () => {
     for (const count of countByX.values()) {
       expect(count).toBe(2);
     }
+  });
+
+  it('vòng lặp thử lại lấp được khoảng trống: 1 kiện bị rớt ở lượt đầu (thiếu support ratio) phải được xếp lại ngay sau khi 1 kiện xử lý SAU nó (nhỏ hơn) lấp đủ phần đáy còn thiếu', () => {
+    // Container 1 lớp duy nhất (H=1000, đủ chỗ 1 tầng z=0-300 + 1 tầng z=300-450) để cô lập đúng
+    // hiện tượng cần kiểm chứng — không có yếu tố xoay/clearance/payload nào gây nhiễu.
+    const container: ContainerTemplate = {
+      id: 'retry-test-container',
+      name: 'Retry Test Container',
+      standardType: 'CUSTOM_TRUCK',
+      innerLength: 1000,
+      innerWidth: 1000,
+      innerHeight: 1000,
+      maxPayload: 100_000,
+      isCustom: true,
+    };
+
+    // groundMain (xử lý ĐẦU TIÊN, thể tích lớn nhất): chỉ phủ 60% chiều dài đáy (600/1000).
+    const groundMain = makeCargoTemplate({
+      id: 'ground-main',
+      sku: 'GROUND-MAIN',
+      length: 600,
+      width: 1000,
+      height: 300,
+      weight: 10,
+      allowedOrientations: [[600, 1000, 300]],
+    });
+    // topWide (xử lý THỨ HAI, thể tích nhì): phủ ĐỦ 100% chiều dài ở tầng trên (z=300) — nếu đặt
+    // ngay lúc này, support ratio chỉ = 60% (chỉ groundMain đỡ) < 75% (MIN_SUPPORT_RATIO) -> RỚT ở
+    // lượt đầu trong thuật toán CŨ (1 lượt duy nhất) sẽ bị loại VĨNH VIỄN dù đáy sau đó được lấp
+    // đủ.
+    const topWide = makeCargoTemplate({
+      id: 'top-wide',
+      sku: 'TOP-WIDE',
+      length: 1000,
+      width: 1000,
+      height: 150,
+      weight: 10,
+      allowedOrientations: [[1000, 1000, 150]],
+    });
+    // filler (xử lý THỨ BA, thể tích nhỏ nhất): lấp đúng 40% chiều dài đáy còn thiếu (400/1000),
+    // cùng chiều cao với groundMain (300) để 2 kiện cùng tạo 1 mặt phẳng liền mạch ở z=300 — sau
+    // khi filler được đặt, đáy được phủ ĐỦ 100%, support ratio cho topWide lúc thử lại = 100%.
+    const filler = makeCargoTemplate({
+      id: 'filler',
+      sku: 'FILLER',
+      length: 400,
+      width: 1000,
+      height: 300,
+      weight: 10,
+      allowedOrientations: [[400, 1000, 300]],
+    });
+
+    // Tự dựng sortedItems theo ĐÚNG thứ tự cần kiểm chứng (groundMain -> topWide -> filler), không
+    // qua sortCargo() — vì mục đích test là kiểm soát CHÍNH XÁC thứ tự xử lý để tái hiện đúng tình
+    // huống "topWide rớt trước khi filler được xếp", không phụ thuộc tiêu chí sort thật.
+    const sortedItems = [
+      { cargoInstanceId: 'ground-main__0', cargoTemplateId: 'ground-main', template: groundMain },
+      { cargoInstanceId: 'top-wide__0', cargoTemplateId: 'top-wide', template: topWide },
+      { cargoInstanceId: 'filler__0', cargoTemplateId: 'filler', template: filler },
+    ];
+
+    const { container: result, unfit } = packContainer({
+      containerTemplate: container,
+      containerInstanceId: 'container-test-retry',
+      containerIndex: 0,
+      sortedItems,
+      weights: PLACEMENT_SCORE_WEIGHTS,
+    });
+
+    // Cả 3 kiện đều phải được xếp — topWide KHÔNG được rớt vĩnh viễn dù lượt đầu tiên nó chưa đủ
+    // support (đây chính là hành vi bug cũ: nếu không có vòng lặp thử lại, topWide sẽ nằm trong
+    // unfit dù về sau đáy đã được lấp đủ).
+    expect(unfit).toHaveLength(0);
+    expect(result.placements).toHaveLength(3);
+
+    const topWidePlacement = result.placements.find((p) => p.cargoTemplateId === 'top-wide');
+    expect(topWidePlacement).toBeDefined();
+    // Đặt đúng ở tầng trên (z=300, ngay trên mặt groundMain/filler) — không phải bị "nhét" xuống
+    // sàn hay vị trí khác để né support constraint.
+    expect(topWidePlacement!.z).toBe(300);
+    // supportRatio = 100% CHỈ có thể đạt được nếu CẢ groundMain VÀ filler cùng đỡ nó — tức
+    // topWide chỉ thực sự được đặt SAU KHI filler đã có mặt (ở lượt thử lại), không phải ở lượt xử
+    // lý đầu tiên (khi đó chỉ groundMain tồn tại, support ratio mới có 60%).
+    expect(topWidePlacement!.supportRatio).toBe(1);
   });
 });

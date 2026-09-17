@@ -668,6 +668,17 @@ button.primary:hover:not(:disabled) {
   gap: 8px;
 }
 
+/* Cụm 2 nút "điều khiển thanh công cụ" ở đầu dải — tay cầm kéo (⠿) + nút thu gọn/mở lại (▾/▸)
+   đứng sát nhau (gap nhỏ hơn hẳn gap chung của .scene-stats-bar-header) vì cùng là hành động điều
+   khiển CHÍNH DẢI NÀY, khác với các nút nghiệp vụ (Tạo phương án/Xuất PDF) nằm riêng ở
+   .scene-stats-bar-header-actions. */
+.scene-stats-bar-toolbar-controls {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
 /* Tay cầm kéo (icon 6 chấm) ở góc trái dải thông tin container — kéo vào đây để di chuyển cả dải
    đến vị trí bất kỳ trong khung 3D (xem DraggableStatsBar.tsx). touch-action:none để trình duyệt
    không tự cuộn trang khi kéo bằng ngón tay trên thiết bị cảm ứng. */
@@ -735,9 +746,9 @@ button.primary:hover:not(:disabled) {
   cursor: not-allowed;
 }
 
-/* Nút thu gọn/mở lại toàn bộ dải thông tin container (mũi tên ▾/▸) — luôn ở cuối
-   .scene-stats-bar-header-actions, kể cả khi thu gọn (2 nút Tạo phương án/Xuất PDF ẩn đi) để
-   không bao giờ mất chỗ mở lại. */
+/* Nút thu gọn/mở lại toàn bộ dải thông tin container (mũi tên ▾/▸) — nằm trong
+   .scene-stats-bar-toolbar-controls cạnh tay cầm kéo, LUÔN hiện (kể cả khi thu gọn, khi 2 nút Tạo
+   phương án/Xuất PDF đã ẩn đi) để không bao giờ mất chỗ mở lại. */
 .scene-stats-bar-collapse-btn {
   flex-shrink: 0;
   padding: 4px 7px;
@@ -987,8 +998,8 @@ button.primary:hover:not(:disabled) {
 .scene-corner-cluster-buttons {
   box-sizing: border-box;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  gap: 6px;
   flex-shrink: 0;
   background: color-mix(in srgb, var(--bg) 80%, transparent);
   padding: 4px;
@@ -997,15 +1008,27 @@ button.primary:hover:not(:disabled) {
   backdrop-filter: blur(4px);
 }
 
-.scene-corner-cluster-buttons button {
-  font-size: 12px;
-  padding: 6px 10px;
+/* Nút icon tròn nhỏ gọn (Xem từng bước/Xoay 3 chiều) — kích thước cố định 36×36px, ghi đè
+   .icon-button (vốn chỉ dùng cho nút "?"/"×" dạng chữ nhỏ trong CargoDetailPopup, không có kích
+   thước/border-radius cố định) để 2 nút này luôn là hình vuông bo tròn đều nhau bất kể nội dung
+   emoji dài ngắn khác nhau. */
+.scene-corner-cluster-buttons button.icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 17px;
+  border-radius: 50%;
+  border: 1px solid transparent;
 }
 
 .scene-corner-cluster-buttons button.is-active {
   background: var(--accent-bg);
   border-color: var(--accent-border);
   font-weight: 600;
+  opacity: 1;
 }
 
 .cargo-detail-popup {

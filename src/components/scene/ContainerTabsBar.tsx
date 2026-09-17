@@ -27,7 +27,7 @@ export function ContainerTabsBar({ containers, activeContainerId, onSelectContai
           onClick={() => onSelectContainer(container.id)}
           aria-pressed={container.id === activeContainerId}
         >
-          Container {i + 1}/{containers.length}
+          Container {i + 1}
         </button>
       ))}
     </div>

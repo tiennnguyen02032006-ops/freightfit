@@ -67,6 +67,11 @@ const CG_AXIS_LABEL: Record<CenterOfGravityWarning['axis'], string> = {
  * cảnh báo, số liệu), CHỈ giữ lại `dragHandle` (để không mất khả năng kéo-thả, xem
  * DraggableStatsBar.tsx) và nút mũi tên để mở lại — không bao giờ ẩn mất hẳn dải này khỏi màn
  * hình.
+ *
+ * Khối `.scene-stats-bar-suggestion` (gợi ý đổi container CUỐI, props
+ * `suggestion`/`suggestedTemplateName`/`onApplySuggestion`) chỉ hiện SAU KHI đã có solution và
+ * container cuối bị thiếu hàng — xem engine/optimization/suggestBetterContainer.ts và
+ * ContainerScene.tsx.
  */
 export const SceneStatsBar = forwardRef<HTMLDivElement, SceneStatsBarProps>(function SceneStatsBar(
   {
@@ -113,33 +118,12 @@ export const SceneStatsBar = forwardRef<HTMLDivElement, SceneStatsBarProps>(func
   return (
     <div className={`scene-stats-bar${collapsed ? ' is-collapsed' : ''}`} ref={ref} style={style}>
       <div className="scene-stats-bar-header">
-        {dragHandle}
-        {!collapsed && <ContainerPicker label={`${containerTemplate.name} (${sizeLabel})`} />}
-
-        <div className="scene-stats-bar-header-actions">
-          {!collapsed && (
-            <>
-              <button
-                type="button"
-                className="scene-stats-bar-generate-btn"
-                disabled={!selectedContainerTemplateId || cargoTemplates.length === 0}
-                onClick={() =>
-                  selectedContainerTemplateId && generateSolutionForContainer(selectedContainerTemplateId)
-                }
-              >
-                Tạo phương án xếp hàng
-              </button>
-              <button
-                type="button"
-                className="scene-stats-bar-export-btn"
-                disabled={!canExportPdf || isExportingPdf}
-                onClick={onExportPdf}
-                title="Xuất báo cáo PDF cho phương án xếp hàng hiện tại"
-              >
-                <span aria-hidden="true">⬇</span> {isExportingPdf ? 'Đang xuất...' : 'Xuất PDF'}
-              </button>
-            </>
-          )}
+        {/* Cụm "điều khiển thanh công cụ" — tay cầm kéo (di chuyển) + nút thu gọn/mở lại, đứng
+            sát nhau ở đầu dải vì đều là hành động điều khiển CHÍNH DẢI NÀY (khác với "Tạo phương
+            án"/"Xuất PDF" là hành động nghiệp vụ) — trước đây nút thu gọn nằm tách hẳn ở cuối dải,
+            sau nút "Xuất PDF", không liên quan gì tới tay cầm kéo dù cùng nhóm chức năng. */}
+        <div className="scene-stats-bar-toolbar-controls">
+          {dragHandle}
           <button
             type="button"
             className="scene-stats-bar-collapse-btn"
@@ -151,6 +135,31 @@ export const SceneStatsBar = forwardRef<HTMLDivElement, SceneStatsBarProps>(func
             {collapsed ? '▸' : '▾'}
           </button>
         </div>
+        {!collapsed && <ContainerPicker label={`${containerTemplate.name} (${sizeLabel})`} />}
+
+        {!collapsed && (
+          <div className="scene-stats-bar-header-actions">
+            <button
+              type="button"
+              className="scene-stats-bar-generate-btn"
+              disabled={!selectedContainerTemplateId || cargoTemplates.length === 0}
+              onClick={() =>
+                selectedContainerTemplateId && generateSolutionForContainer(selectedContainerTemplateId)
+              }
+            >
+              Tạo phương án xếp hàng
+            </button>
+            <button
+              type="button"
+              className="scene-stats-bar-export-btn"
+              disabled={!canExportPdf || isExportingPdf}
+              onClick={onExportPdf}
+              title="Xuất báo cáo PDF cho phương án xếp hàng hiện tại"
+            >
+              <span aria-hidden="true">⬇</span> {isExportingPdf ? 'Đang xuất...' : 'Xuất PDF'}
+            </button>
+          </div>
+        )}
       </div>
 
       {!collapsed && containerTemplate.notes && <div className="scene-stats-bar-note">{containerTemplate.notes}</div>}

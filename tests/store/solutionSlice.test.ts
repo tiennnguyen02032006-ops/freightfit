@@ -91,4 +91,28 @@ describe('applyContainerSuggestion (store)', () => {
 
     expect(useAppStore.getState().lastContainerSuggestion).toBeNull();
   });
+
+  it('áp dụng thành công -> selectedContainerTemplateId tự đổi sang đúng loại vừa áp dụng, các container KHÁC (chưa đổi) vẫn hiển thị đầy đủ', () => {
+    seedLowFillLastContainer();
+    const suggestedId = useAppStore.getState().lastContainerSuggestion!.suggestedTemplateId;
+    // Có ít nhất 1 container KHÁC container cuối, vẫn giữ template cũ ('std-20ft') sau khi áp dụng
+    // — nếu không có, không thể kiểm tra được việc solution giờ có NHIỀU template khác nhau.
+    const containersBefore = useAppStore.getState().solution!.containers;
+    expect(containersBefore.length).toBeGreaterThan(1);
+
+    useAppStore.getState().applyContainerSuggestion();
+
+    const after = useAppStore.getState();
+    expect(after.selectedContainerTemplateId).toBe(suggestedId);
+    const containers = after.solution!.containers;
+    // Solution giờ có 2 loại template khác nhau (các container trước vẫn 'std-20ft', container
+    // cuối đã đổi sang suggestedId) — BUG có thể xảy ra: nếu component chỉ so template của
+    // containers[0] với selectedContainerTemplateId (giờ đã đổi sang suggestedId) để quyết định có
+    // hiển thị solution hay không, nó sẽ ẩn nhầm TOÀN BỘ hàng hóa. Test này chỉ kiểm tra đúng dữ
+    // liệu store (containers[0] vẫn 'std-20ft', không bị mất/đổi nhầm) — phần hiển thị 3D
+    // (ContainerScene.tsx solutionContainers) được sửa riêng để không còn phụ thuộc single-template
+    // assumption này.
+    expect(containers[0].templateId).toBe('std-20ft');
+    expect(containers[containers.length - 1].templateId).toBe(suggestedId);
+  });
 });

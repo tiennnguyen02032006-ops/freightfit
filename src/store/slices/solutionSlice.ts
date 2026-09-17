@@ -143,5 +143,14 @@ export const createSolutionSlice: StateCreator<RootStore, [], [], SolutionSlice>
     };
 
     set({ solution: newSolution, lastContainerSuggestion: null });
+    // Đồng bộ ô chọn container/xe (ContainerPicker) sang ĐÚNG loại vừa áp dụng cho container cuối
+    // — không bắt buộc về mặt dữ liệu (containers có thể thuộc nhiều template khác nhau, xem ghi
+    // chú templatesById ở trên), nhưng người dùng vừa bấm "Áp dụng" nên rất có khả năng đang XEM
+    // đúng container cuối này; nếu không tự cập nhật, ô chọn vẫn hiện tên/kích thước container CŨ
+    // dù khung 3D đã đổi, gây cảm giác "nửa vời". activeContainerTemplate (ContainerScene.tsx) vẫn
+    // luôn tự tra theo container.templateId của container ĐANG XEM để vẽ khung 3D — không phụ
+    // thuộc gì vào selectedContainerTemplateId, nên chỉnh state này không ảnh hưởng gì tới việc
+    // hiển thị 3D, chỉ đồng bộ lại đúng cái ô chọn ở đầu thanh cho khớp.
+    state.setSelectedContainerTemplateId(newTemplate.id);
   },
 });

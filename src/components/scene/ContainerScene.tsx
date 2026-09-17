@@ -114,13 +114,21 @@ export function ContainerScene() {
   // (thuộc container trước) sẽ ẩn đi để tránh nhầm lẫn kích thước.
   const containerTemplate =
     containerLibrary.find((t) => t.id === selectedContainerTemplateId) ?? containerLibrary[0];
-  // solution.containers có thể có NHIỀU container (hàng hóa vượt quá 1 container — xem
-  // generateSolutions.ts) — tất cả cùng chung 1 loại template trong 1 solution, nên chỉ cần so
-  // template của container ĐẦU TIÊN để biết cả solution có thuộc containerTemplate đang chọn hay
-  // không. `container` = đúng container instance đang XEM (activeContainerInstanceId, đổi qua dải
-  // tab ContainerTabsBar), tự rơi về container đầu tiên nếu chưa chọn/id không khớp (vd solution
-  // vừa được tạo lại).
-  const solutionContainers = solution?.containers[0]?.templateId === containerTemplate?.id ? (solution?.containers ?? []) : [];
+  // solution.containers THƯỜNG cùng chung 1 loại template (hàng hóa vượt quá 1 container — xem
+  // generateSolutions.ts) — trước đây chỉ so template của container ĐẦU TIÊN với containerTemplate
+  // đang chọn để biết solution có "thuộc" lựa chọn hiện tại trong thư viện hay không (dùng để ẩn
+  // hàng hóa CŨ khi người dùng đổi sang duyệt 1 loại container khác nhưng CHƯA bấm "Tạo phương án"
+  // lại). Từ khi có gợi ý đổi xe cho container cuối (applyContainerSuggestion, solutionSlice.ts —
+  // hàm đó cũng tự đổi selectedContainerTemplateId sang đúng loại vừa áp dụng để đồng bộ ô chọn), 1
+  // solution có thể có NHIỀU template khác nhau (container 1-2 vẫn "20ft Standard", container cuối
+  // đã đổi sang "Xe tải Veam...") — containers[0].templateId khi đó KHÔNG còn khớp
+  // containerTemplate.id (Veam) dù solution vẫn hợp lệ, nếu chỉ so containers[0] sẽ ẩn nhầm TOÀN BỘ
+  // hàng hóa. Sửa: coi solution "thuộc" lựa chọn hiện tại nếu containerTemplate đang chọn khớp
+  // template của BẤT KỲ container nào trong solution (không chỉ container đầu) — với solution đồng
+  // nhất (trường hợp thường gặp) kết quả không đổi gì so với trước.
+  const solutionContainers = solution?.containers.some((c) => c.templateId === containerTemplate?.id)
+    ? solution.containers
+    : [];
   const container = solutionContainers.find((c) => c.id === activeContainerInstanceId) ?? solutionContainers[0];
   // Chỉ hiển thị cảnh báo lệch trọng tâm CỦA ĐÚNG container đang xem — cgWarnings là mảng PHẲNG
   // gộp chung mọi container trong solution (xem PackingSolution.cgWarnings), phải tự lọc theo
@@ -336,7 +344,6 @@ export function ContainerScene() {
             containerTemplate={activeContainerTemplate}
             container={container}
             cgWarnings={cgWarnings}
-            sceneContainerRef={sceneContainerRef}
             canExportPdf={!!solution}
             isExportingPdf={isExportingPdf}
             onExportPdf={handleExportPdf}

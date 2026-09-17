@@ -21,8 +21,10 @@ interface SceneCornerClusterProps {
  * 3. Bảng "Thông tin hàng hóa" (CargoDetailPopup.tsx — trước đây tự bám theo vị trí 3D của kiện
  *    hàng đang chọn, nổi ngay cạnh nó; nay CỐ ĐỊNH tại đây, không di chuyển theo kiện hàng nữa).
  *
- * Xếp theo chiều dọc: 2 nút phía trên, bảng thông tin phía dưới — bảng thông tin tự ẩn (component
- * con trả về null) khi không có kiện hàng nào đang chọn, cụm khi đó chỉ còn lại 2 nút gọn gàng.
+ * 2 nút phía trên xếp NGANG cạnh nhau (dạng icon tròn nhỏ gọn, tái dùng class "icon-button" —
+ * xem App.css `.scene-corner-cluster-buttons`), bảng thông tin phía dưới — bảng thông tin tự ẩn
+ * (component con trả về null) khi không có kiện hàng nào đang chọn, cụm khi đó chỉ còn lại 2 nút
+ * gọn gàng.
  *
  * `raised`: khi đang xem từng bước (StepSimulationControls hiện, chiếm full-width sát đáy khung
  * 3D), cụm này phải tự nâng lên cao hơn (xem `.scene-corner-cluster--raised` trong App.css) để
@@ -43,21 +45,24 @@ export function SceneCornerCluster({
       <div className="scene-corner-cluster-buttons">
         <button
           type="button"
-          className={simulating ? 'is-active' : undefined}
+          className={`icon-button${simulating ? ' is-active' : ''}`}
           onClick={onToggleSimulating}
           aria-pressed={simulating}
+          aria-label="Xem từng bước"
+          title="Xem mô phỏng xếp hàng từng bước"
         >
-          Xem từng bước
+          🪜
         </button>
         {rotateMode && (
           <button
             type="button"
-            className={rotateMode.active ? 'is-active' : undefined}
+            className={`icon-button${rotateMode.active ? ' is-active' : ''}`}
             onClick={rotateMode.onToggle}
             aria-pressed={rotateMode.active}
+            aria-label="Xoay 3 chiều"
             title="Bấm để chuyển sang chế độ xoay (hiện mũi tên cong, bấm đầu mũi tên để xoay ngang 90°) — bấm lại để quay về chế độ di chuyển (kéo thân kiện)"
           >
-            Xoay 3 chiều
+            🔄
           </button>
         )}
       </div>

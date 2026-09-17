@@ -128,8 +128,19 @@ export function packContainer(params: PackContainerParams): PackContainerResult 
   let totalWeight = 0;
   let usedVolume = 0;
   const unfit: UnfitCargo[] = [];
+  // Lý do rớt GẦN NHẤT (cập nhật lại mỗi lần tryPlaceItem thất bại cho item đó) — dùng khi vòng
+  // lặp thử lại cuối cùng bỏ cuộc hẳn với 1 item, xem tryPlaceItem/vòng lặp thử lại bên dưới.
+  const lastUnfitReasonByInstanceId = new Map<string, UnfitCargo>();
 
-  for (const item of sortedItems) {
+  /**
+   * Thử đặt 1 kiện hàng vào vị trí tốt nhất trong số extremePoints HIỆN TẠI (đọc/ghi trực tiếp
+   * placements/extremePoints/totalWeight/usedVolume ở closure ngoài) — trả về true nếu đặt được
+   * (đã push placement + cập nhật state), false nếu không. KHÔNG tự push vào `unfit` khi thất bại
+   * (chỉ ghi lại lý do gần nhất vào lastUnfitReasonByInstanceId) — để nơi gọi tự quyết định lúc
+   * nào mới coi là rớt hẳn (vòng lặp chính đẩy vào retryQueue để thử lại, chỉ vòng lặp thử lại
+   * cuối cùng mới thực sự kết luận unfit, xem bên dưới).
+   */
+  function tryPlaceItem(item: ExpandedCargoItem): boolean {
     const template = item.template;
     let best: BestCandidate | null = null;
     let anyOrientationFitsContainer = false;
@@ -211,7 +222,7 @@ export function packContainer(params: PackContainerParams): PackContainerResult 
     });
 
     if (!best) {
-      unfit.push({
+      lastUnfitReasonByInstanceId.set(item.cargoInstanceId, {
         cargoInstanceId: item.cargoInstanceId,
         cargoTemplateId: item.cargoTemplateId,
         reason: determineUnfitReason({
@@ -220,7 +231,7 @@ export function packContainer(params: PackContainerParams): PackContainerResult 
           allFailuresWereStacking: hadAnyFitCandidate && allFitCandidatesFailedStacking,
         }),
       });
-      continue;
+      return false;
     }
 
     const chosen: BestCandidate = best;
@@ -265,6 +276,42 @@ export function packContainer(params: PackContainerParams): PackContainerResult 
       height: chosen.fitHeight,
     });
     extremePoints = addExtremePoints(extremePoints, newPoints);
+    return true;
+  }
+
+  // Vòng lặp chính: đúng thứ tự sortedItems, item nào không đặt được ngay thì đưa vào retryQueue
+  // thay vì kết luận unfit ngay lập tức.
+  let retryQueue: ExpandedCargoItem[] = [];
+  for (const item of sortedItems) {
+    if (!tryPlaceItem(item)) retryQueue.push(item);
+  }
+
+  // Vòng lặp "thử lại" kiểu fixed-point: các item bị rớt sớm có thể xếp vừa vào extremePoints MỚI
+  // sinh ra bởi các item xếp SAU đó trong cùng lượt (vd lấp khoảng trống "lối đi ở giữa" — xem giải
+  // thích tính năng ở đầu file/lịch sử thay đổi). Lặp nhiều lượt tới khi 1 lượt không còn đặt thêm
+  // được món nào (không có tiến triển) thì dừng. Hằng số an toàn: tối đa bằng đúng số item còn lại
+  // lúc bắt đầu vòng lặp thử lại — mỗi lượt CÓ tiến triển đặt được ít nhất 1 món, nên không bao giờ
+  // cần nhiều lượt hơn số item, phòng lỗi logic ngoài dự kiến khiến vòng lặp không tự dừng đúng lúc
+  // (giống style MAX_CONTAINERS ở generateSolutions.ts).
+  const maxRetryPasses = retryQueue.length;
+  for (let pass = 0; pass < maxRetryPasses && retryQueue.length > 0; pass++) {
+    const stillUnfit: ExpandedCargoItem[] = [];
+    let progressed = false;
+    for (const item of retryQueue) {
+      if (tryPlaceItem(item)) {
+        progressed = true;
+      } else {
+        stillUnfit.push(item);
+      }
+    }
+    retryQueue = stillUnfit;
+    if (!progressed) break;
+  }
+
+  for (const item of retryQueue) {
+    // lastUnfitReasonByInstanceId LUÔN có entry cho item ở đây — tryPlaceItem ghi lại lý do ngay
+    // trước khi trả về false, và item chỉ còn trong retryQueue nếu lần thử GẦN NHẤT của nó thất bại.
+    unfit.push(lastUnfitReasonByInstanceId.get(item.cargoInstanceId)!);
   }
 
   // Quy đổi x nội bộ -> x thật: toàn bộ vòng lặp trên xếp hàng trong khung x nội bộ (khoảng
