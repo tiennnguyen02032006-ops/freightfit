@@ -1227,14 +1227,15 @@ button.primary:hover:not(:disabled) {
   bottom: 10px;
   left: 10px;
   z-index: 2;
-  width: 220px;
-  max-width: calc(100% - 20px);
+  width: fit-content;
+  min-width: 130px;
+  max-width: min(200px, calc(100% - 20px));
   max-height: 40%;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   box-sizing: border-box;
-  padding: 8px 10px;
+  padding: 5px 6px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg) 80%, transparent);
@@ -1250,28 +1251,34 @@ button.primary:hover:not(:disabled) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
+  padding: 0 2px;
+  font-size: 11px;
   font-weight: 600;
 }
 
 .cargo-visibility-panel-title {
   flex: 1;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Cùng kích thước/hình dạng với .scene-stats-bar-collapse-btn nhưng dùng màu theo theme (panel này
    nền theo --bg, không phải nền tối cố định như dải thông tin container). */
 .cargo-visibility-panel-collapse-btn {
   flex-shrink: 0;
-  padding: 4px 7px;
-  font-size: 11px;
+  padding: 2px 4px;
+  font-size: 10px;
   line-height: 1;
 }
 
 .cargo-visibility-panel-show-all {
   flex-shrink: 0;
-  padding: 2px 8px;
-  font-size: 11px;
+  padding: 1px 5px;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .cargo-visibility-panel-list {

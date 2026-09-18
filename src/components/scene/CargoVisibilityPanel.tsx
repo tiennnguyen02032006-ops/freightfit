@@ -34,7 +34,7 @@ export function CargoVisibilityPanel({ items, hiddenIds, onToggle, onShowAll, ra
         >
           {collapsed ? '▸' : '▾'}
         </button>
-        <span className="cargo-visibility-panel-title">Hiện/ẩn hàng hóa</span>
+        <span className="cargo-visibility-panel-title">Hàng hóa</span>
         <button type="button" onClick={onShowAll} className="cargo-visibility-panel-show-all">
           Hiện tất cả
         </button>
