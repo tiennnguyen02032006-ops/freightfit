@@ -475,6 +475,26 @@ button.primary:hover:not(:disabled) {
   font-size: 12.5px;
 }
 
+/* Khối con tách riêng chi phí "Container cuối" (khi khác template với các container đầu) — thụt
+   lề nhẹ + viền trên mờ để phân biệt trực quan với các dòng chi phí gộp chung phía trên, xem
+   TransportCostPanel.tsx. */
+.transport-cost-summary-group {
+  margin-top: 6px;
+  padding-top: 6px;
+  padding-left: 8px;
+  border-top: 1px dashed var(--border, rgba(255, 255, 255, 0.08));
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.transport-cost-summary-subheading {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-h);
+  opacity: 0.85;
+}
+
 .transport-cost-summary-total {
   font-size: 13.5px;
   font-weight: 700;
