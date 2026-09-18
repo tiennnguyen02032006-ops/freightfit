@@ -1220,6 +1220,95 @@ button.primary:hover:not(:disabled) {
   font-weight: 600;
 }
 
+/* Bảng hiện/ẩn từng loại hàng (CargoVisibilityPanel.tsx) — góc dưới-TRÁI khung 3D (góc dưới-phải
+   đã có SceneCornerCluster); nâng lên khi thanh xem từng bước đang hiện. */
+.cargo-visibility-panel {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  z-index: 2;
+  width: 220px;
+  max-width: calc(100% - 20px);
+  max-height: 40%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter: blur(4px);
+  font-size: 12px;
+}
+
+.cargo-visibility-panel--raised {
+  bottom: 92px;
+}
+
+.cargo-visibility-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.cargo-visibility-panel-title {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Cùng kích thước/hình dạng với .scene-stats-bar-collapse-btn nhưng dùng màu theo theme (panel này
+   nền theo --bg, không phải nền tối cố định như dải thông tin container). */
+.cargo-visibility-panel-collapse-btn {
+  flex-shrink: 0;
+  padding: 4px 7px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.cargo-visibility-panel-show-all {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.cargo-visibility-panel-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cargo-visibility-panel-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.cargo-visibility-panel-swatch {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+.cargo-visibility-panel-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cargo-visibility-panel-count {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
 .edit-notice-banner {
   position: absolute;
   top: 10px;

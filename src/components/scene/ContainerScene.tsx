@@ -14,6 +14,7 @@ import { DraggableStatsBar } from './DraggableStatsBar';
 import { StepSimulationControls } from './StepSimulationControls';
 import { clampStepIndex, getVisiblePlacements } from './stepSimulation';
 import { SceneCornerCluster } from './SceneCornerCluster';
+import { CargoVisibilityPanel } from './CargoVisibilityPanel';
 import { ContainerTabsBar } from './ContainerTabsBar';
 import { downloadPackingSolutionPdf, type ContainerReportInput } from '../../export/exportPdf';
 
@@ -161,6 +162,42 @@ export function ContainerScene() {
     ? getVisiblePlacements(container?.placements ?? [], stepIndex)
     : (container?.placements ?? []);
   const currentPlacement = stepIndex > 0 ? visiblePlacements[stepIndex - 1] : undefined;
+
+  // Làm mờ RIÊNG từng LOẠI hàng (tên state giữ "hidden" theo CargoVisibilityPanel: bỏ tích = làm
+  // mờ, không ẩn hẳn) — chỉ ảnh hưởng render 3D (prop `faded`), state cục bộ tạm thời, không lưu
+  // store. Không đụng visiblePlacements/totalSteps/stepIndex nên "Xem từng bước" đếm bước như cũ.
+  const [hiddenCargoTemplateIds, setHiddenCargoTemplateIds] = useState<Set<string>>(new Set());
+
+  // Reset khi đổi container đang xem — ẩn hàng của container CŨ không nên áp nhầm sang container MỚI.
+  useEffect(() => {
+    setHiddenCargoTemplateIds(new Set());
+  }, [activeContainerInstanceId]);
+
+  const toggleCargoVisibility = (cargoTemplateId: string) => {
+    setHiddenCargoTemplateIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(cargoTemplateId)) next.delete(cargoTemplateId);
+      else next.add(cargoTemplateId);
+      return next;
+    });
+  };
+
+  const cargoVisibilityItems = useMemo(() => {
+    if (!container) return [];
+    const countByTemplateId = new Map<string, number>();
+    for (const p of container.placements) {
+      countByTemplateId.set(p.cargoTemplateId, (countByTemplateId.get(p.cargoTemplateId) ?? 0) + 1);
+    }
+    return Array.from(countByTemplateId.entries()).map(([cargoTemplateId, count]) => {
+      const template = templatesById.get(cargoTemplateId);
+      return {
+        cargoTemplateId,
+        name: template?.name ?? cargoTemplateId,
+        color: template?.color ?? '#999999',
+        count,
+      };
+    });
+  }, [container, templatesById]);
 
   // Highlight tạm thời kiện vừa "thêm vào" ở bước hiện tại, tự tắt sau HIGHLIGHT_DURATION_MS —
   // reset mỗi khi bước hoặc chế độ simulation đổi để không giữ highlight cũ.
@@ -417,6 +454,7 @@ export function ContainerScene() {
         />
         {visiblePlacements.map((placement) => {
           const isSelected = placement.id === selectedPlacementId;
+          const isFaded = hiddenCargoTemplateIds.has(placement.cargoTemplateId);
           // Chỉ kiện ĐANG CHỌN, khi có thể chỉnh tay, mới được bọc DraggablePlacement (kéo trực
           // tiếp thân kiện) — các kiện khác vẽ bình thường, không kéo được.
           if (isSelected && canEdit && container) {
@@ -426,6 +464,7 @@ export function ContainerScene() {
                 placement={placement}
                 template={templatesById.get(placement.cargoTemplateId)}
                 highlighted={placement.id === highlightedPlacementId}
+                faded={isFaded}
                 onSelect={handleSelectPlacement}
                 onCommitMove={(target) => movePlacement(container.id, placement.id, target)}
                 onRotateAxis={(axis) => rotatePlacement(container.id, placement.id, axis)}
@@ -444,6 +483,7 @@ export function ContainerScene() {
               template={templatesById.get(placement.cargoTemplateId)}
               selected={isSelected}
               highlighted={placement.id === highlightedPlacementId}
+              faded={isFaded}
               onSelect={handleSelectPlacement}
               disableSelect={rotateModeActive}
             />
@@ -452,6 +492,13 @@ export function ContainerScene() {
         <CenterOfGravityMarker container={container} containerTemplate={activeContainerTemplate} />
       </Canvas>
       {editNotice && <div className="edit-notice-banner">⚠ {editNotice}</div>}
+      <CargoVisibilityPanel
+        items={cargoVisibilityItems}
+        hiddenIds={hiddenCargoTemplateIds}
+        onToggle={toggleCargoVisibility}
+        onShowAll={() => setHiddenCargoTemplateIds(new Set())}
+        raised={isSimulating}
+      />
       <SceneCornerCluster
         simulating={isSimulating}
         onToggleSimulating={() => setViewMode(isSimulating ? '3D' : 'STEP_SIMULATION')}

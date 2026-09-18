@@ -1,9 +1,44 @@
 import { describe, expect, it } from 'vitest';
-import { clampStepIndex, getVisiblePlacements } from '../../../src/components/scene/stepSimulation';
+import {
+  clampStepIndex,
+  getLoadOrderPlacements,
+  getVisiblePlacements,
+} from '../../../src/components/scene/stepSimulation';
 import { makePlacement } from '../../fixtures/placement';
 
-// Load order giả định = thứ tự trong mảng (đúng như packContainer.ts push placements) — 3 kiện
-// theo thứ tự p1 (xếp đầu tiên) -> p2 -> p3 (xếp cuối cùng).
+describe('getLoadOrderPlacements', () => {
+  it('x GIẢM DẦN: kiện xa cửa (x lớn, sâu bên trong) chất trước, gần cửa (x nhỏ) chất sau cùng', () => {
+    const input = [
+      makePlacement({ id: 'near-door', x: 0 }),
+      makePlacement({ id: 'deep', x: 4000 }),
+      makePlacement({ id: 'middle', x: 2000 }),
+    ];
+    expect(getLoadOrderPlacements(input).map((p) => p.id)).toEqual(['deep', 'middle', 'near-door']);
+  });
+
+  it('cùng x: z TĂNG DẦN (tầng thấp trước), rồi y TĂNG DẦN', () => {
+    const input = [
+      makePlacement({ id: 'top', x: 1000, z: 500, y: 0 }),
+      makePlacement({ id: 'bottom-right', x: 1000, z: 0, y: 600 }),
+      makePlacement({ id: 'bottom-left', x: 1000, z: 0, y: 0 }),
+    ];
+    expect(getLoadOrderPlacements(input).map((p) => p.id)).toEqual(['bottom-left', 'bottom-right', 'top']);
+  });
+
+  it('không đổi mảng gốc', () => {
+    const input = [makePlacement({ id: 'a', x: 0 }), makePlacement({ id: 'b', x: 100 })];
+    getLoadOrderPlacements(input);
+    expect(input.map((p) => p.id)).toEqual(['a', 'b']);
+  });
+
+  it('getVisiblePlacements hiện đúng N kiện đầu theo thứ tự chất hàng (sâu trước)', () => {
+    const input = [makePlacement({ id: 'near', x: 0 }), makePlacement({ id: 'deep', x: 3000 })];
+    expect(getVisiblePlacements(input, 1).map((p) => p.id)).toEqual(['deep']);
+  });
+});
+
+// Các kiện dưới đây cùng x/y/z mặc định (fixture) -> sort ổn định giữ nguyên thứ tự mảng, dùng để
+// kiểm tra logic cắt N kiện đầu độc lập với tiêu chí sắp xếp.
 const placements = [
   makePlacement({ id: 'p1' }),
   makePlacement({ id: 'p2' }),

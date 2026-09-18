@@ -34,6 +34,11 @@ interface CargoBox3DProps {
   // (đỏ) nếu không, để người dùng biết ngay mà không cần thả ra mới thấy báo lỗi. undefined = màu
   // bình thường theo SKU (không đang kéo, hoặc chưa kịp tính validity ở lần di chuột đầu tiên).
   previewTint?: 'valid' | 'invalid';
+  // true = chỉ vẽ KHUNG DÂY (viền), không tô mặt nào — dùng khi người dùng làm mờ 1 LOẠI hàng trong
+  // CargoVisibilityPanel để dễ quan sát loại hàng đang quan tâm mà vẫn hình dung được vị trí/số
+  // lượng của loại đó. Không dùng opacity/transparent/depthWrite (nhiều lớp mờ cộng dồn thành
+  // đậm khi có hàng trăm kiện) nên luôn nhìn xuyên thấu hoàn toàn.
+  faded?: boolean;
 }
 
 /**
@@ -55,6 +60,7 @@ export function CargoBox3D({
   renderAtOrigin = false,
   disableSelect = false,
   previewTint,
+  faded = false,
 }: CargoBox3DProps) {
   // Màu lấy trực tiếp từ CargoTemplate.color (tự gán khi tạo hoặc người dùng tự chỉnh qua
   // color picker trong AddCargoPanel) — đổi màu ở đó sẽ tự phản ánh lên đây ngay vì cùng đọc
@@ -76,8 +82,12 @@ export function CargoBox3D({
   // với highlighted (hiệu ứng step-simulation, không bao giờ trùng thời điểm với kéo tay vì
   // canEdit=false khi đang simulate) nên không cần lo tranh chấp giữa 2 hiệu ứng.
   const previewColor = previewTint === 'valid' ? '#22c55e' : previewTint === 'invalid' ? '#ef4444' : null;
-  const edgeColor = previewColor ?? (highlighted ? '#ffe066' : selected ? '#ffffff' : '#1c1c1c');
-  const edgeWidth = previewTint ? 3 : highlighted ? 3.5 : selected ? 2.5 : 1.25;
+  // faded: khung dây là thứ DUY NHẤT còn hiển thị nên viền rõ hơn; bỏ qua mọi trạng thái khác (selected/highlighted không có ý nghĩa khi
+  // đã làm mờ để nhường chỗ quan sát loại khác).
+  const edgeColor = faded
+    ? '#999999'
+    : (previewColor ?? (highlighted ? '#ffe066' : selected ? '#ffffff' : '#1c1c1c'));
+  const edgeWidth = faded ? 1 : (previewTint ? 3 : highlighted ? 3.5 : selected ? 2.5 : 1.25);
   // Phát sáng nhẹ (emissive) khi highlighted — chỉ dùng cho hiệu ứng "vừa thêm vào" tạm thời của
   // simulation, tự tắt sau vài giây (xem ContainerScene.tsx), không phải trạng thái `selected`.
   const emissive = previewColor ?? (highlighted ? '#ffe066' : '#000000');
@@ -92,7 +102,7 @@ export function CargoBox3D({
     // Đường kính lấy từ length (= width, xem AddCargoPanel.tsx) -> bán kính = length/2.
     const radius = placement.length / 2;
     return (
-      <mesh position={position} castShadow receiveShadow onClick={disableSelect ? undefined : handleClick}>
+      <mesh position={position} castShadow={!faded} receiveShadow={!faded} onClick={disableSelect ? undefined : handleClick}>
         <cylinderGeometry args={[radius, radius, placement.height, 32]} />
         {/* Vật liệu theo group của CylinderGeometry: 0 = mặt bên, 1 = đáy trên, 2 = đáy dưới. */}
         <meshStandardMaterial
@@ -102,6 +112,7 @@ export function CargoBox3D({
           metalness={0}
           emissive={emissive}
           emissiveIntensity={emissiveIntensity}
+          visible={!faded}
         />
         <meshStandardMaterial
           attach="material-1"
@@ -110,6 +121,7 @@ export function CargoBox3D({
           metalness={0}
           emissive={emissive}
           emissiveIntensity={emissiveIntensity}
+          visible={!faded}
         />
         <meshStandardMaterial
           attach="material-2"
@@ -118,6 +130,7 @@ export function CargoBox3D({
           metalness={0}
           emissive={emissive}
           emissiveIntensity={emissiveIntensity}
+          visible={!faded}
         />
         <Edges color={edgeColor} linewidth={edgeWidth} />
       </mesh>
@@ -125,12 +138,15 @@ export function CargoBox3D({
   }
 
   return (
-    <mesh position={position} castShadow receiveShadow onClick={disableSelect ? undefined : handleClick}>
+    <mesh position={position} castShadow={!faded} receiveShadow={!faded} onClick={disableSelect ? undefined : handleClick}>
       <boxGeometry args={[placement.length, placement.height, placement.width]} />
       {/*
-        Vật liệu ĐẶC (opacity=1, transparent=false): trước đó dùng transparent=true khiến
-        nhiều box xếp cạnh/chồng nhau bị Three.js sort sai thứ tự vẽ, nhìn như các kiện hàng
-        "đè xuyên" vào nhau dù dữ liệu packing không hề overlap (đã có test collision xác nhận).
+        Vật liệu luôn ĐẶC (opacity=1, transparent=false): transparent=true từng khiến nhiều box
+        xếp cạnh/chồng nhau bị Three.js sort sai thứ tự vẽ, nhìn như "đè xuyên" nhau dù dữ liệu
+        không overlap. Khi `faded` chỉ vẽ KHUNG DÂY (<Edges>): vật liệu đặt visible={false} thay vì
+        bỏ hẳn (mesh không có vật liệu sẽ bị Three.js tự gán MeshBasicMaterial trắng đặc).
+        material.visible=false không vẽ mặt nào nhưng mesh vẫn raycast được nên click chọn kiện
+        vẫn hoạt động.
       */}
       <meshStandardMaterial
         map={labelTexture}
@@ -138,6 +154,7 @@ export function CargoBox3D({
         metalness={0}
         emissive={emissive}
         emissiveIntensity={emissiveIntensity}
+        visible={!faded}
       />
       <Edges color={edgeColor} linewidth={edgeWidth} />
     </mesh>

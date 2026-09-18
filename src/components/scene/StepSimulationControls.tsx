@@ -11,10 +11,11 @@ interface StepSimulationControlsProps {
 }
 
 /**
- * Thanh điều khiển mô phỏng xếp hàng từng bước, cố định dưới đáy khung 3D. Load order = thứ tự
- * CÓ SẴN trong `container.placements` (mảng này đã đúng thứ tự thuật toán xếp hàng quyết định —
- * xem packContainer.ts, mỗi vòng lặp push đúng 1 placement theo thứ tự xếp) — không tính lại gì
- * cả, chỉ đọc `placements[stepIndex - 1]` để biết kiện vừa thêm.
+ * Thanh điều khiển mô phỏng xếp hàng từng bước, cố định dưới đáy khung 3D. Component này KHÔNG tự
+ * biết thứ tự chất hàng — nhận sẵn `currentPlacement` (kiện vừa thêm ở bước hiện tại) từ
+ * ContainerScene.tsx, đã lấy từ danh sách sắp xếp theo thứ tự chất hàng THỰC TẾ (xa cửa trước, gần
+ * cửa sau — xem getLoadOrderPlacements trong stepSimulation.ts), nên số bước hiển thị luôn khớp
+ * đúng những gì đang hiện trên màn hình.
  */
 export function StepSimulationControls({
   stepIndex,

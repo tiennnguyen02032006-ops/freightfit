@@ -15,6 +15,9 @@ interface DraggablePlacementProps {
   placement: Placement;
   template: CargoTemplate | undefined;
   highlighted: boolean;
+  // Kiện thuộc loại đang bị làm mờ trong CargoVisibilityPanel — chỉ đổi hiển thị (xuyên xuống
+  // CargoBox3D), kéo/xoay tay vẫn hoạt động bình thường.
+  faded?: boolean;
   onSelect: (placementId: string, shiftKey: boolean) => void;
   // Trả về true nếu store CHẤP NHẬN vị trí mới (đã revalidate hợp lệ), false nếu bị từ chối —
   // xem editSlice.ts movePlacement. DraggablePlacement dùng giá trị này để tự "snap back" về vị
@@ -149,6 +152,7 @@ export function DraggablePlacement({
   placement,
   template,
   highlighted,
+  faded = false,
   onSelect,
   onCommitMove,
   onRotateAxis,
@@ -375,6 +379,7 @@ export function DraggablePlacement({
             template={template}
             selected
             highlighted={highlighted}
+            faded={faded}
             onSelect={onSelect}
             renderAtOrigin
             disableSelect={rotateModeActive}
