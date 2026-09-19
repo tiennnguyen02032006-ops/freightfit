@@ -1021,6 +1021,11 @@ button.primary:hover:not(:disabled) {
   flex-direction: row;
   gap: 6px;
   flex-shrink: 0;
+  /* Cha .scene-corner-cluster dùng align-items: stretch (flex-column) — không có 2 dòng này, hàng
+     nút bị giãn rộng bằng .cargo-detail-popup bên dưới thay vì co vừa đúng số icon đang hiện (vd
+     chỉ 1 nút "Xem từng bước" khi chưa có "Xoay 3 chiều"). flex-end vì cụm neo bên PHẢI khung 3D. */
+  align-self: flex-end;
+  width: fit-content;
   background: color-mix(in srgb, var(--bg) 80%, transparent);
   padding: 4px;
   border-radius: 8px;
@@ -1053,16 +1058,19 @@ button.primary:hover:not(:disabled) {
 
 .cargo-detail-popup {
   box-sizing: border-box;
-  width: 100%;
+  align-self: flex-end;
+  width: fit-content;
+  min-width: 180px;
+  max-width: 220px;
   min-height: 0;
   overflow-y: auto;
   background: color-mix(in srgb, var(--code-bg) 92%, transparent);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 6px 8px;
   backdrop-filter: blur(4px);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-  font-size: 12.5px;
+  font-size: 11.5px;
 }
 
 .cargo-detail-popup-header {
@@ -1070,7 +1078,8 @@ button.primary:hover:not(:disabled) {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 8px;
+  font-size: 12px;
+  padding-bottom: 4px;
 }
 
 .cargo-detail-popup-header-actions {
@@ -1078,6 +1087,13 @@ button.primary:hover:not(:disabled) {
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
+}
+
+/* .icon-button gốc (16px, padding 2px 6px) hơi to so với bảng đã thu nhỏ — giảm riêng ở đây, KHÔNG
+   sửa .icon-button gốc vì class đó dùng chung cho nhiều nơi khác trong app. */
+.cargo-detail-popup-header-actions .icon-button {
+  padding: 4px;
+  font-size: 13px;
 }
 
 .cargo-detail-popup-header strong {
@@ -1102,13 +1118,14 @@ button.primary:hover:not(:disabled) {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .cargo-detail-popup li {
   display: flex;
   justify-content: space-between;
   gap: 8px;
+  padding: 1px 0;
 }
 
 .cargo-detail-popup li span:first-child {
