@@ -189,7 +189,18 @@ export function DraggablePlacement({
 
   const camera = useThree((s) => s.camera);
   const glDomElement = useThree((s) => s.gl.domElement);
-  const getControlsEnabled = useThree((s) => s.controls) as { enabled?: boolean } | null;
+  const controlsFromThree = useThree((s) => s.controls) as { enabled?: boolean } | null;
+  // React Compiler cấm mutate thẳng giá trị trả về từ hook (react-hooks/immutability) — nhưng đây
+  // là mutate CÓ CHỦ ĐÍCH lên object OrbitControls thật của three.js (không phải React state), cần
+  // tắt/bật NGAY lập tức trong lúc kéo (xem JSDoc "DISABLE OrbitControls" ở trên). Đồng bộ vào ref
+  // qua effect (KHÔNG gán trong lúc render — react-hooks/refs cấm đọc/ghi `.current` trong render)
+  // để 2 handler bên dưới mutate qua `.current` (một mutable box riêng, không còn bị compiler coi
+  // là "giá trị hook") thay vì mutate thẳng biến lấy từ useThree(). Effect này chạy sau MỌI lần
+  // render trước khi người dùng kịp bấm kéo, nên 2 handler luôn thấy đúng controls hiện tại.
+  const controlsRef = useRef<{ enabled?: boolean } | null>(null);
+  useEffect(() => {
+    controlsRef.current = controlsFromThree;
+  }, [controlsFromThree]);
 
   const raycasterRef = useRef(new Raycaster());
   const currentEngineRef = useRef({ x: placement.x, y: placement.y, z: placement.z });
@@ -324,7 +335,7 @@ export function DraggablePlacement({
     window.removeEventListener('pointermove', handleWindowPointerMove);
     window.removeEventListener('pointerup', handleWindowPointerUp);
     anchorRef.current = null;
-    if (getControlsEnabled) getControlsEnabled.enabled = true;
+    if (controlsRef.current) controlsRef.current.enabled = true;
 
     setSnapHighlights([]);
     setDragValidity(null);
@@ -338,7 +349,7 @@ export function DraggablePlacement({
 
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
-    if (getControlsEnabled) getControlsEnabled.enabled = false;
+    if (controlsRef.current) controlsRef.current.enabled = false;
 
     // Xóa ngay thông báo lỗi (nếu còn) từ lần kéo THẤT BẠI trước đó — bắt đầu 1 lượt kéo mới nghĩa
     // là người dùng đang THỬ VỊ TRÍ KHÁC, không được để thông báo cũ dính lại gây hiểu lầm.

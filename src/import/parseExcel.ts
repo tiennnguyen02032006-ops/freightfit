@@ -50,11 +50,11 @@ export async function parseExcelFile(file: File): Promise<CargoImportRow[]> {
  * Chuẩn hoá tên cột để so khớp không phân biệt hoa/thường, khoảng trắng thừa hay ký tự BOM
  * (thường gặp ở đầu cột đầu tiên khi export CSV từ Excel).
  */
+const BOM_CHAR_CODE = 0xfeff; // U+FEFF — tránh viết ký tự BOM thật trong source (bị no-irregular-whitespace chặn)
+
 function normalizeHeaderKey(key: string): string {
-  return key
-    .replace(/^﻿/, '')
-    .trim()
-    .toLowerCase();
+  const withoutBom = key.charCodeAt(0) === BOM_CHAR_CODE ? key.slice(1) : key;
+  return withoutBom.trim().toLowerCase();
 }
 
 /**

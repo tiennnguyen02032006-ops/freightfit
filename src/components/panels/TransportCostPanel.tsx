@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAppStore } from '../../store';
 import { formatNumber } from '../shared/formatUnits';
 
@@ -82,22 +82,30 @@ export function TransportCostPanel() {
   const otherTemplateId = otherContainers[0]?.templateId;
   const otherTemplate = otherTemplateId ? templatesById.get(otherTemplateId) : selectedTemplate;
 
-  // Đổi loại container -> nạp lại giá gốc của loại đó, xóa mọi chỉnh sửa tạm thời trước đó.
-  useEffect(() => {
+  // Đổi loại container -> nạp lại giá gốc của loại đó, xóa mọi chỉnh sửa tạm thời trước đó. Đặt
+  // lại NGAY TRONG lúc render (mẫu "adjust state while rendering" của React, xem
+  // https://react.dev/learn/you-might-not-need-an-effect) thay vì useEffect — tránh 1 nhịp render
+  // trung gian còn hiện giá cũ trước khi effect kịp chạy.
+  const [prevOtherTemplateId, setPrevOtherTemplateId] = useState(otherTemplate?.id);
+  if (prevOtherTemplateId !== otherTemplate?.id) {
+    setPrevOtherTemplateId(otherTemplate?.id);
     setCostPerKmInput(otherTemplate?.costPerKm != null ? String(otherTemplate.costPerKm) : '');
     setCostPerTripInput(otherTemplate?.costPerTrip != null ? String(otherTemplate.costPerTrip) : '');
-  }, [otherTemplate?.id]);
+  }
 
   const costPerKm = Number(costPerKmInput);
   const costPerTrip = Number(costPerTripInput);
 
-  // Ô chỉnh tay "Đơn giá cước" RIÊNG cho container CUỐI — dependency BẮT BUỘC là lastTemplate?.id
+  // Ô chỉnh tay "Đơn giá cước" RIÊNG cho container CUỐI — khóa so sánh BẮT BUỘC là lastTemplate?.id
   // (không dùng biến nào khác) để tự nạp lại ĐÚNG giá gốc mỗi khi container cuối đổi sang loại xe
   // khác (vd sau khi bấm "Áp dụng" gợi ý đổi xe), không giữ giá trị cũ của loại xe trước đó — đây
-  // là lỗi đã gặp và fix ở lần sửa trước, lần này đảm bảo không lặp lại.
-  useEffect(() => {
+  // là lỗi đã gặp và fix ở lần sửa trước, lần này đảm bảo không lặp lại. Đặt lại NGAY TRONG lúc
+  // render (mẫu "adjust state while rendering" của React) thay vì useEffect, cùng lý do như ở trên.
+  const [prevLastTemplateId, setPrevLastTemplateId] = useState(lastTemplate?.id);
+  if (prevLastTemplateId !== lastTemplate?.id) {
+    setPrevLastTemplateId(lastTemplate?.id);
     setLastCostPerKmInput(lastTemplate?.costPerKm != null ? String(lastTemplate.costPerKm) : '');
-  }, [lastTemplate?.id]);
+  }
 
   const lastCostPerKm = Number(lastCostPerKmInput);
 

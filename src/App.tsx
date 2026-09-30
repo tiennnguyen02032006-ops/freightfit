@@ -7,10 +7,14 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import './App.css';
+import './components/panels/BlackBoxPanel.css';
 import { AddCargoPanel } from './components/panels/AddCargoPanel';
+import { BlackBoxPanel } from './components/panels/BlackBoxPanel';
 import { TransportCostPanel } from './components/panels/TransportCostPanel';
 import { ImportPanel } from './components/panels/ImportPanel';
+import { SavedTripsPanel } from './components/panels/SavedTripsPanel';
 import { SolutionSummaryBar } from './components/panels/SolutionSummaryBar';
+import type { TripPlanRecord } from './domain/types';
 import { ContainerScene } from './components/scene/ContainerScene';
 
 const LEFT_WIDTH_STORAGE_KEY = 'freightfit.leftPanelWidth';
@@ -35,6 +39,13 @@ function loadStoredLeftWidth(): number {
 }
 
 function App() {
+  // 'pack' = xếp hàng 3D (mặc định) | 'black-box' = tab điều tra sự cố (dữ liệu mô phỏng).
+  // State cục bộ, không lưu lại giữa các lần mở app (đúng quy ước in-memory của dự án).
+  const [mode, setMode] = useState<'pack' | 'black-box'>('pack');
+  // Chuyến vừa bấm "Tìm nguyên nhân sự cố" ở SavedTripsPanel.tsx (Bước 3) — CHỈ để hiện 1 dòng
+  // nhắc nhỏ trên tab Black Box, KHÔNG nạp dữ liệu chuyến vào bộ máy suy luận (Black Box vẫn hoạt
+  // động độc lập trên dữ liệu mô phỏng như cũ, xem BlackBoxPanel.tsx) — chưa tô sáng kiện hàng nào.
+  const [incidentTrip, setIncidentTrip] = useState<TripPlanRecord | null>(null);
   const [leftOpen, setLeftOpen] = useState(true);
   const [leftWidth, setLeftWidth] = useState(loadStoredLeftWidth);
   const [isResizing, setIsResizing] = useState(false);
@@ -80,9 +91,37 @@ function App() {
     <div className="app-shell">
       <header className="app-header">
         <span className="app-logo">📦 FreightFit</span>
-        <span className="app-subtitle">Tối ưu xếp hàng 3D vào container</span>
+        <nav className="app-mode-tabs" aria-label="Chế độ làm việc">
+          <button
+            type="button"
+            className={mode === 'pack' ? 'app-mode-tab is-active' : 'app-mode-tab'}
+            aria-pressed={mode === 'pack'}
+            onClick={() => setMode('pack')}
+          >
+            Xếp hàng 3D
+          </button>
+          <button
+            type="button"
+            className={mode === 'black-box' ? 'app-mode-tab is-active' : 'app-mode-tab'}
+            aria-pressed={mode === 'black-box'}
+            onClick={() => setMode('black-box')}
+          >
+            Black Box
+          </button>
+        </nav>
       </header>
 
+      {mode === 'black-box' ? (
+        <>
+          {incidentTrip && (
+            <p className="incident-trip-banner">
+              Đang tra cứu sự cố cho chuyến: <b>{incidentTrip.name}</b>
+            </p>
+          )}
+          <BlackBoxPanel />
+        </>
+      ) : (
+        <>
       <SolutionSummaryBar />
 
       <div
@@ -96,10 +135,16 @@ function App() {
             : undefined
         }
       >
-        <aside className="app-column app-column-left" hidden={!leftOpen}>
+        <aside className="app-column app-column-left" id="app-column-left" hidden={!leftOpen}>
           <AddCargoPanel />
           <TransportCostPanel />
           <ImportPanel />
+          <SavedTripsPanel
+            onFindIncidentCause={(trip) => {
+              setIncidentTrip(trip);
+              setMode('black-box');
+            }}
+          />
         </aside>
 
         {/*
@@ -137,6 +182,8 @@ function App() {
           <ContainerScene />
         </main>
       </div>
+        </>
+      )}
     </div>
   );
 }

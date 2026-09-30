@@ -93,7 +93,7 @@ export function TruckDecoration({ length, width, height }: TruckDecorationProps)
   // Tất cả bánh dùng chung wheelRadius/wheelCenterY -> luôn cùng kích thước, cùng chạm đất trên
   // một đường thẳng. Lấy bán kính qua wheelRadiusFor (dùng chung với ContainerScene.tsx tính
   // khoảng hở mặt đất) để không bao giờ lệch giá trị. ----
-  const wheelRadius = wheelRadiusFor(height);
+  const wheelRadius = wheelRadiusFor();
   const wheelCenterY = groundY - wheelRadius; // nóc bánh chạm đúng đáy sàn/cabin
   const wheelInset = 150; // lùi vào trong so với mép cabin/container
 

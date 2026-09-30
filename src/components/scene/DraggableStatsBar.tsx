@@ -93,7 +93,12 @@ export function DraggableStatsBar({
   // (khác sceneContainerRef trước đây), nhưng vẫn giữ bước này để tránh mismatch hydrate/portal ở
   // lần render đầu tiên.
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  // queueMicrotask thay vì gọi setState trực tiếp trong thân effect (bị react-hooks/
+  // set-state-in-effect chặn) — vẫn chạy ngay sau khi mount, trước lần vẽ tiếp theo, không đổi thời
+  // điểm hiệu lực so với trước.
+  useEffect(() => {
+    queueMicrotask(() => setMounted(true));
+  }, []);
 
   const boxRef = useRef<HTMLDivElement>(null);
 

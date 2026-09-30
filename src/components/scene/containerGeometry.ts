@@ -19,10 +19,11 @@ export const TRUCK_LENGTH_MM = 2150;
 
 /**
  * Bán kính bánh xe = 450mm CỐ ĐỊNH (không còn phụ thuộc chiều cao container) — theo yêu cầu
- * "bán kính 0,45m, không lớn hơn". Giữ nguyên tham số containerHeight (không dùng tới) để không
- * phải sửa lại các nơi đang gọi hàm này (ContainerScene.tsx dùng để tính khoảng hở mặt đất).
+ * "bán kính 0,45m, không lớn hơn". Không còn nhận tham số containerHeight (đã bỏ hẳn vì không
+ * dùng tới — @typescript-eslint/no-unused-vars không cho giữ tham số thừa dù có prefix "_"); đã
+ * cập nhật cả 2 nơi gọi hàm này (bên dưới và TruckDecoration.tsx) theo đúng chữ ký mới.
  */
-export function wheelRadiusFor(_containerHeight: number): number {
+export function wheelRadiusFor(): number {
   return 450;
 }
 
@@ -34,6 +35,6 @@ export function wheelRadiusFor(_containerHeight: number): number {
  * ContainerScene (hạ mặt đất/ContactShadows xuống đúng bằng khoảng này, và cộng thêm vào chiều
  * cao cảnh để camera luôn thấy trọn cả bánh xe, không bị cắt hình).
  */
-export function vehicleGroundClearance(containerHeight: number): number {
-  return wheelRadiusFor(containerHeight) * 2;
+export function vehicleGroundClearance(): number {
+  return wheelRadiusFor() * 2;
 }

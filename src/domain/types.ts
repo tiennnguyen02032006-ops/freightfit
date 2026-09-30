@@ -336,3 +336,213 @@ export interface AppState {
     rotateModeActive: boolean;
   };
 }
+// ============================================================
+// 12. LOGISTICS BLACK BOX — điều tra sự cố (tab riêng, dữ liệu MÔ PHỎNG)
+// ============================================================
+// Lưu ý đơn vị: khác với phần xếp hàng (mm/kg), Black Box dùng PHÚT tính từ lúc xuất phát (t=0),
+// km cho quãng đường/độ lệch tuyến, °C cho nhiệt độ. Không dùng chung với Placement/CargoTemplate.
+
+export type BlackBoxCause =
+  | 'offplan_handling'
+  | 'traffic'
+  | 'reefer_failure'
+  | 'route_deviation'
+  | 'breakdown'
+  | 'driver_rest';
+
+export type BlackBoxSource =
+  | 'gps'
+  | 'temp'
+  | 'door'
+  | 'camera'
+  | 'engine'
+  | 'traffic'
+  | 'docs'
+  | 'driver';
+
+export type BlackBoxFeatureName =
+  | 'stop_dur'
+  | 'crawl'
+  | 'offroute'
+  | 'temp_exc'
+  | 'temp_onset'
+  | 'temp_slope'
+  | 'door'
+  | 'camera'
+  | 'engine_off'
+  | 'fault'
+  | 'traffic_hi'
+  | 'count_mismatch'
+  | 'driver_contra'
+  | 'delay';
+
+// null = nguồn dữ liệu tương ứng đang thiếu -> không tính vào suy luận.
+export type BlackBoxFeatures = Record<BlackBoxFeatureName, string | null>;
+
+export interface BlackBoxGpsPing {
+  t: number;    // phút kể từ lúc xuất phát
+  s: number;    // km đã đi dọc tuyến
+  off: number;  // km lệch khỏi tuyến kế hoạch
+  v: number;    // km/h
+}
+
+export interface BlackBoxCaseRecord {
+  tripId: string;
+  meta: { depart: number; ata: number; planned: number; delay: number; setpoint: number };
+  gps: BlackBoxGpsPing[] | null;
+  temp: Array<{ t: number; T: number }> | null;
+  door: Array<[number, number]> | null;                 // các khoảng [mở, đóng] (phút)
+  camera: number[] | null;                              // thời điểm camera thấy hoạt động bốc/dỡ
+  engine: {
+    tel: Array<{ t: number; on: boolean }>;
+    faults: Array<[number, 'engine' | 'reefer']>;
+  } | null;
+  traffic: Array<{ t: number; idx: number }> | null;    // chỉ số tắc đường 0..1
+  docs: { loaded: number; delivered: number } | null;   // số kiện xếp / số kiện giao
+  driver: { stop: boolean; dev: boolean; door: boolean } | null; // lời khai: có dừng / lệch tuyến / mở cửa không
+  truth: { causes: BlackBoxCause[] };                   // đáp án của ca mô phỏng — engine KHÔNG được đọc
+}
+
+// [bắt đầu, kết thúc, thời lượng] (phút)
+export type BlackBoxWindow = [number, number, number];
+
+export interface BlackBoxInfo {
+  stops: BlackBoxWindow[];
+  crawls: BlackBoxWindow[];
+  slow: BlackBoxWindow[];
+  offroute: [number, number, number] | null;            // [bắt đầu, kết thúc, độ lệch tối đa km]
+  tempOnsetT: number | null;
+  contradictions: Array<[string, string]>;              // [lời khai, bằng chứng cảm biến]
+  doorOpen: Array<[number, number]>;
+  camera: number[];
+  faults: Array<[number, 'engine' | 'reefer']>;
+}
+
+export interface BlackBoxModelData {
+  T: number;                                            // nhiệt độ hiệu chỉnh độ tin cậy
+  logp: Record<BlackBoxCause, Record<BlackBoxFeatureName, Record<string, number>>>;
+  stats: {
+    top1: number;
+    chance: number;
+    tiers: Array<[string, number]>;
+    mixedExactPair: number;
+    worstCase: number;
+  };
+}
+
+export type BlackBoxEvidence = [BlackBoxFeatureName, string, number]; // [đặc trưng, giá trị, LLR đã hiệu chỉnh]
+
+export interface BlackBoxHypothesis {
+  cause: BlackBoxCause;
+  confidence: number;            // 0..1
+  support: BlackBoxEvidence[];
+  refute: BlackBoxEvidence[];
+}
+
+export interface BlackBoxTimelineEvent {
+  t: number;
+  text: string;
+  level: 'info' | 'warn' | 'bad';
+}
+
+export interface BlackBoxInvestigation {
+  features: BlackBoxFeatures;
+  info: BlackBoxInfo;
+  hypotheses: BlackBoxHypothesis[];        // top 3, xếp theo độ tin cậy giảm dần
+  topCause: BlackBoxCause;
+  timeline: BlackBoxTimelineEvent[];
+  requests: Array<[BlackBoxSource, number]>; // nguồn dữ liệu nên bổ sung để phân biệt top 1 và top 2
+}
+
+// ============================================================
+// 13. TRIP STORAGE (localStorage — NGOẠI LỆ persistence duy nhất được phép trong app, xem
+// CLAUDE.md và src/storage/tripStorage.ts) — "kế hoạch chuyến" giữ thông tin từ lúc xếp hàng 3D
+// tới lúc nhập dữ liệu thực tế cho Black Box. Chỉ types.ts khai báo các interface này; mọi
+// đọc/ghi localStorage phải đi qua đúng src/storage/tripStorage.ts, không tự thêm ở nơi khác.
+// ============================================================
+
+export interface TripPlanStop {
+  stopId: string;
+  order: number;          // thứ tự giao hàng, 0 = giao đầu tiên
+  name: string;            // tên/địa chỉ điểm giao, nhập tay
+  etaMinutes: number;      // ETA tính từ lúc xuất phát (phút) — cùng mốc thời gian với Black Box (t=0 lúc xuất phát)
+}
+
+// Tham chiếu 1 kiện hàng đã xếp (không copy lại toàn bộ CargoTemplate) tới điểm giao của nó — xem
+// naming *TemplateId/*InstanceId ở CLAUDE.md.
+export interface TripPlanCargoRef {
+  cargoInstanceId: string;
+  cargoTemplateId: string;
+  stopId: string;
+}
+
+export interface TripPlanRecord {
+  tripId: string;
+  name: string;
+  createdAt: number;       // epoch ms, Date.now() lúc lưu
+  stops: TripPlanStop[];
+  cargo: TripPlanCargoRef[];
+  // Khoảng cách (km) giữa từng CẶP điểm giao — người dùng tự nhập tay (app không có nguồn toạ
+  // độ/bản đồ thật). Optional để tương thích ngược với chuyến đã lưu trước khi có Giai đoạn C
+  // (đọc thấy thiếu field này thì coi là mảng rỗng, xem src/storage/tripStorage.ts).
+  distances?: TripStopDistance[];
+}
+
+export interface TripActualStopResult {
+  stopId: string;
+  deliveredCount: number;  // số kiện thực giao tại điểm này
+}
+
+export interface TripActualRecord {
+  tripId: string;
+  actualArrivalMinutes: number;        // giờ đến thực tế (phút từ lúc xuất phát)
+  stops: TripActualStopResult[];       // số kiện giao thực tế TỪNG điểm
+}
+
+export interface StoredTripEntry {
+  plan: TripPlanRecord;
+  actual: TripActualRecord | null;     // null = chưa nhập dữ liệu thực tế
+  // Phương án giao hàng đề xuất (Giai đoạn C) — optional để tương thích ngược với chuyến đã lưu
+  // trước khi có tính năng này; null/undefined = chưa tính/chưa lưu phương án nào.
+  route?: TripRouteResult | null;
+}
+
+export interface StoredTrips {
+  version: 1;
+  trips: StoredTripEntry[];
+}
+
+// ============================================================
+// 14. TRIP ROUTE PROPOSAL (Giai đoạn C — chọn 1 phương án giao hàng duy nhất) — xem
+// engine/constraints/deliveryOrder.ts (ràng buộc "không kiện nào bị chắn" theo thứ tự giao, RIÊNG
+// cho tính năng này, KHÔNG dùng trong packContainer.ts/generateSolutions.ts) và
+// engine/optimization/routeProposal.ts (thuật toán chọn thứ tự giao + xe). Quãng đường luôn là ƯỚC
+// LƯỢNG dựa trên khoảng cách người dùng tự nhập (TripPlanRecord.distances), không phải dữ liệu bản
+// đồ thật.
+// ============================================================
+
+// Khoảng cách (km) giữa 2 điểm giao — đối xứng (A->B = B->A), người dùng tự nhập tay.
+export interface TripStopDistance {
+  stopIdA: string;
+  stopIdB: string;
+  km: number;
+}
+
+export interface TripRouteProposal {
+  containerTemplateId: string;         // loại xe/container được chọn cho phương án này
+  stopOrder: string[];                 // thứ tự stopId đề xuất (điểm giao đầu tiên ở vị trí 0)
+  estimatedDistanceKm: number;         // tổng quãng đường ước lượng của thứ tự ĐƯỢC CHỌN
+  shortestPossibleDistanceKm: number;  // quãng đường của thứ tự ngắn nhất đã xét (không xét ràng buộc chắn hàng) — để so sánh
+  fillRatioPercent: number;            // tỷ lệ lấp đầy container ở phương án xếp được chọn (0..100)
+  blockedCount: number;                // số kiện bị chắn ở phương án ĐƯỢC CHỌN — luôn = 0
+  usedHeuristic: boolean;              // true nếu vượt ngưỡng tính đúng toàn bộ, phải dùng heuristic (không đảm bảo tối ưu tuyệt đối)
+  generatedAt: number;                 // epoch ms
+}
+
+export type TripRouteResult =
+  | { feasible: true; proposal: TripRouteProposal }
+  | {
+      feasible: false;
+      reason: string;       // lý do cụ thể phương án không tồn tại
+      suggestion: string;   // gợi ý cách nới (xe lớn hơn / chấp nhận chắn ít kiện nhất) — CHỈ hiện gợi ý, không tự áp dụng
+    };

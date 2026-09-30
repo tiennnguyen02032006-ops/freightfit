@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAppStore } from '../../store';
 import type { ContainerInstance } from '../../domain/types';
 import { getAvailableRotationAxes } from '../../engine/rotationAvailability';
@@ -34,11 +34,15 @@ export function CargoDetailPopup({ container }: CargoDetailPopupProps) {
 
   // Thu gọn lại hướng dẫn + trạng thái thu gọn mỗi khi đổi sang kiện hàng khác — tránh giữ "đã mở
   // hint"/"đã thu gọn" của kiện trước sang kiện sau, dễ gây cảm giác bảng tự dưng cao/thấp hơn bình
-  // thường mà không rõ vì sao.
-  useEffect(() => {
+  // thường mà không rõ vì sao. Đặt lại NGAY TRONG lúc render (mẫu "adjust state while rendering"
+  // chính thức của React, xem https://react.dev/learn/you-might-not-need-an-effect) thay vì
+  // useEffect — tránh 1 nhịp render trung gian còn hiện trạng thái CŨ trước khi effect kịp chạy.
+  const [prevSelectedPlacementId, setPrevSelectedPlacementId] = useState(selectedPlacementId);
+  if (prevSelectedPlacementId !== selectedPlacementId) {
+    setPrevSelectedPlacementId(selectedPlacementId);
     setShowHelp(false);
     setCollapsed(false);
-  }, [selectedPlacementId]);
+  }
 
   if (!placement || !template) {
     return null;

@@ -168,10 +168,15 @@ export function ContainerScene() {
   // store. Không đụng visiblePlacements/totalSteps/stepIndex nên "Xem từng bước" đếm bước như cũ.
   const [hiddenCargoTemplateIds, setHiddenCargoTemplateIds] = useState<Set<string>>(new Set());
 
-  // Reset khi đổi container đang xem — ẩn hàng của container CŨ không nên áp nhầm sang container MỚI.
-  useEffect(() => {
+  // Reset khi đổi container đang xem — ẩn hàng của container CŨ không nên áp nhầm sang container
+  // MỚI. Đặt lại NGAY TRONG lúc render (mẫu "adjust state while rendering" của React, xem
+  // https://react.dev/learn/you-might-not-need-an-effect) thay vì useEffect — tránh 1 nhịp render
+  // trung gian còn hiện danh sách làm mờ của container cũ trước khi effect kịp chạy.
+  const [prevActiveContainerInstanceId, setPrevActiveContainerInstanceId] = useState(activeContainerInstanceId);
+  if (prevActiveContainerInstanceId !== activeContainerInstanceId) {
+    setPrevActiveContainerInstanceId(activeContainerInstanceId);
     setHiddenCargoTemplateIds(new Set());
-  }, [activeContainerInstanceId]);
+  }
 
   const toggleCargoVisibility = (cargoTemplateId: string) => {
     setHiddenCargoTemplateIds((prev) => {
@@ -200,13 +205,18 @@ export function ContainerScene() {
   }, [container, templatesById]);
 
   // Highlight tạm thời kiện vừa "thêm vào" ở bước hiện tại, tự tắt sau HIGHLIGHT_DURATION_MS —
-  // reset mỗi khi bước hoặc chế độ simulation đổi để không giữ highlight cũ.
+  // reset mỗi khi bước hoặc chế độ simulation đổi để không giữ highlight cũ. Phần BẬT highlight đặt
+  // NGAY TRONG lúc render (mẫu "adjust state while rendering" của React) thay vì useEffect — tránh
+  // 1 nhịp render trung gian còn hiện highlight cũ; phần TẮT tự động sau thời gian (cần setTimeout +
+  // cleanup thật sự, không thể làm trong lúc render) vẫn giữ nguyên trong useEffect riêng.
+  const currentPlacementId = isSimulating ? currentPlacement?.id : undefined;
+  const [prevHighlightKey, setPrevHighlightKey] = useState(currentPlacementId);
+  if (prevHighlightKey !== currentPlacementId) {
+    setPrevHighlightKey(currentPlacementId);
+    setHighlightedPlacementId(currentPlacementId ?? null);
+  }
   useEffect(() => {
-    if (!isSimulating || !currentPlacement) {
-      setHighlightedPlacementId(null);
-      return;
-    }
-    setHighlightedPlacementId(currentPlacement.id);
+    if (!isSimulating || !currentPlacement) return;
     const timer = setTimeout(() => setHighlightedPlacementId(null), HIGHLIGHT_DURATION_MS);
     return () => clearTimeout(timer);
   }, [isSimulating, currentPlacement]);
@@ -326,11 +336,10 @@ export function ContainerScene() {
   // Mặt đất thật nằm dưới đáy sàn (-thickness) một khoảng bằng khung gầm + bánh xe — xem
   // containerGeometry.ts. Đáy sàn (-thickness) giữ nguyên không đổi (mốc dùng cho tọa độ hàng
   // hóa), chỉ mặt đất bên dưới hạ xuống để chừa chỗ vẽ bánh/khung gầm.
-  const groundY = -thickness - vehicleGroundClearance(activeContainerTemplate.innerHeight);
+  const groundY = -thickness - vehicleGroundClearance();
 
   const totalLength = activeContainerTemplate.innerLength + thickness + TRUCK_LENGTH_MM;
-  const totalHeightSpan =
-    activeContainerTemplate.innerHeight + thickness + vehicleGroundClearance(activeContainerTemplate.innerHeight);
+  const totalHeightSpan = activeContainerTemplate.innerHeight + thickness + vehicleGroundClearance();
   const sceneMaxDim = Math.max(totalLength, activeContainerTemplate.innerWidth, totalHeightSpan);
   // Tâm x của toàn cảnh (container + đầu xe) — dùng chung cho camera VÀ target OrbitControls
   // để hai bên luôn khớp nhau, tránh lệch khung nhìn.
