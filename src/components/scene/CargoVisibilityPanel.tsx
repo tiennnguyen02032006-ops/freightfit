@@ -1,9 +1,13 @@
 import { useState } from 'react';
+import type { ColorMode } from '../../utils/customerColor';
 
 interface CargoVisibilityPanelProps {
-  items: Array<{ cargoTemplateId: string; name: string; color: string; count: number }>;
+  // Mỗi mục là 1 loại hàng (theo SKU) hoặc 1 khách hàng (gom các loại hàng của khách đó) tuỳ chế độ màu.
+  items: Array<{ key: string; cargoTemplateIds: string[]; name: string; color: string; count: number }>;
+  colorMode: ColorMode;
+  onColorModeChange: (mode: ColorMode) => void;
   hiddenIds: Set<string>;
-  onToggle: (cargoTemplateId: string) => void;
+  onToggle: (cargoTemplateIds: string[]) => void;
   onShowAll: () => void;
   // true khi StepSimulationControls (thanh cuộn xem từng bước, full-width sát đáy) đang hiện — tự
   // nâng bảng lên cao hơn để 2 bên không đè lên nhau (cùng cách SceneCornerCluster `raised`).
@@ -19,7 +23,7 @@ interface CargoVisibilityPanelProps {
  * Thu gọn (`collapsed`, state cục bộ) chỉ ẩn PHẦN HIỂN THỊ danh sách — hiddenIds nằm ở
  * ContainerScene.tsx nên trạng thái ẩn/hiện từng loại không bị mất khi thu gọn.
  */
-export function CargoVisibilityPanel({ items, hiddenIds, onToggle, onShowAll, raised }: CargoVisibilityPanelProps) {
+export function CargoVisibilityPanel({ items, hiddenIds, onToggle, onShowAll, raised, colorMode, onColorModeChange }: CargoVisibilityPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   if (items.length === 0) return null;
   return (
@@ -34,7 +38,15 @@ export function CargoVisibilityPanel({ items, hiddenIds, onToggle, onShowAll, ra
         >
           {collapsed ? '▸' : '▾'}
         </button>
-        <span className="cargo-visibility-panel-title">Hàng hóa</span>
+        <span className="cargo-visibility-panel-title">{colorMode === 'customer' ? 'Khách hàng' : 'Hàng hóa'}</span>
+        <button
+          type="button"
+          className="cargo-visibility-panel-show-all"
+          onClick={() => onColorModeChange(colorMode === 'customer' ? 'sku' : 'customer')}
+          title="Đổi cách tô màu hàng trong khung 3D"
+        >
+          {colorMode === 'customer' ? 'Màu theo SKU' : 'Màu theo khách hàng'}
+        </button>
         <button type="button" onClick={onShowAll} className="cargo-visibility-panel-show-all">
           Hiện tất cả
         </button>
@@ -42,11 +54,11 @@ export function CargoVisibilityPanel({ items, hiddenIds, onToggle, onShowAll, ra
       {!collapsed && (
         <div className="cargo-visibility-panel-list">
           {items.map((item) => (
-            <label key={item.cargoTemplateId} className="cargo-visibility-panel-item">
+            <label key={item.key} className="cargo-visibility-panel-item">
               <input
                 type="checkbox"
-                checked={!hiddenIds.has(item.cargoTemplateId)}
-                onChange={() => onToggle(item.cargoTemplateId)}
+                checked={!item.cargoTemplateIds.every((id) => hiddenIds.has(id))}
+                onChange={() => onToggle(item.cargoTemplateIds)}
               />
               <span className="cargo-visibility-panel-swatch" style={{ backgroundColor: item.color }} />
               <span className="cargo-visibility-panel-name">{item.name}</span>

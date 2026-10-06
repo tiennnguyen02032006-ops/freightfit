@@ -8,6 +8,104 @@
 // (CargoBox3D vẽ CylinderGeometry thay vì BoxGeometry) và ở form nhập (nhãn Đường kính/Chiều cao).
 export type CargoShapeType = 'BOX' | 'CYLINDER' | 'PALLET' | 'DRUM';
 
+// Pallet gỗ chuẩn cho tuỳ chọn "Hàng trên pallet" — danh sách kích thước ở
+// engine/preprocessing/palletTypes.ts.
+export type PalletTypeId = '120x80' | '120x100' | '110x110' | '121.9x101.6';
+
+// Tuỳ chọn "Xếp lên pallet" của 1 CargoTemplate (thùng carton): app tự xếp từng thùng lên pallet theo
+// lớp, kết quả (số pallet, số thùng mỗi pallet) tính bởi engine/palletizing/palletizeCargo.ts.
+// Chưa đưa pallet vào container — chỉ là kế hoạch xếp pallet.
+// Cấu hình dung sai xếp hàng (xem engine/tolerance.ts): dung sai kích thước mỗi chiều của từng loại hàng
+// (CargoTemplate.tolerance, mặc định defaultDimensionTolerance) và khe giữa các pallet / giữa pallet với vách.
+// Được cộng vào trường clearance sẵn có khi kiểm tra va chạm, số thùng mỗi lớp trên pallet và vừa pallet;
+// 3D vẫn vẽ kích thước thật.
+export interface ToleranceSettings {
+  enabled: boolean;
+  defaultDimensionTolerance: number; // mm mỗi chiều — mặc định 15 (1,5 cm) cho thùng carton
+  palletGap: number;                 // mm — khe pallet–pallet và pallet–vách container, mặc định 30 (3 cm)
+}
+
+export interface PalletizeParams {
+  palletType: PalletTypeId;
+  maxHeight: number;    // mm — chiều cao tối đa của pallet, ĐÃ GỒM đế pallet
+  maxWeight: number;    // kg — khối lượng hàng tối đa mỗi pallet (không gồm bản thân pallet)
+  // Số tầng pallet tối đa khi xếp vào container (1 = không chồng pallet lên nhau; không đặt = 1).
+  maxTiers?: number;
+}
+
+// Vị trí 1 thùng trong 1 lớp, toạ độ mm tính từ góc pallet (x theo chiều dài, y theo chiều rộng).
+export interface PalletBoxRect {
+  x: number;
+  y: number;
+  length: number;
+  width: number;
+}
+
+export interface PalletLayer {
+  orientation: [number, number, number];  // hướng đặt thùng (l, w, h) của lớp này — cả lớp cùng hướng
+  boxes: PalletBoxRect[];
+}
+
+export interface PalletLoad {
+  id: string;
+  cargoTemplateId: string;  // mỗi pallet chỉ chứa 1 SKU/template
+  sku: string;
+  palletType: PalletTypeId;
+  layers: PalletLayer[];
+  boxCount: number;
+  totalWeight: number;      // kg hàng (chỉ các thùng, không gồm pallet) — dùng cho giới hạn khối lượng tối đa mỗi pallet
+  palletWeight: number;     // kg bản thân pallet gỗ (vỏ) — cộng vào khối lượng khi xếp vào container
+  totalHeight: number;      // mm, gồm đế pallet và dung sai chiều cao của từng lớp
+  tolerance?: number;       // mm dung sai mỗi chiều đã tính cho thùng trên pallet này (0/không có = không dung sai)
+  isPartial: boolean;       // true = pallet lẻ (ít thùng hơn 1 pallet đầy)
+}
+
+export interface PalletizationResult {
+  cargoTemplateId: string;
+  sku: string;
+  params: PalletizeParams;
+  pallets: PalletLoad[];
+  unpalletizedBoxCount: number;  // thùng không xếp lên pallet nào được (kèm reason)
+  // Thùng thừa không đủ tạo 1 lớp pallet: không lên pallet, xếp RỜI vào khoảng trống trong container
+  // (xem palletizing/palletBlock.ts expandCargoWithPallets).
+  looseBoxCount: number;
+  reason?: string;
+  tolerance?: number;            // mm dung sai mỗi chiều đã tính khi xếp thùng lên pallet (hiển thị "đã tính dung sai X cm")
+  reasonCode?: UnfitReason;      // dạng mã của reason, dùng khi đưa các thùng này vào danh sách không xếp vừa
+}
+
+// Nhóm hàng đặc biệt (xem engine/segregation.ts): thực phẩm, hàng có mùi, hóa chất, hàng nguy hiểm (kèm lớp IMDG 1–9).
+// Không đặt = hàng thường. Dùng để chia lô hàng thành các nhóm tương thích, xếp riêng vào các container khác nhau.
+export type SpecialGroup = 'FOOD' | 'ODOROUS' | 'CHEMICAL' | 'DANGEROUS';
+export type DangerClass = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+// Khoá nhóm hiệu lực của 1 loại hàng; hàng nguy hiểm tách theo lớp (DG1..DG9).
+export type GroupKey = 'GENERAL' | 'FOOD' | 'ODOROUS' | 'CHEMICAL' | `DG${DangerClass}`;
+// Khoá dùng trong bảng quy tắc: thêm 'DANGEROUS' = mọi lớp nguy hiểm.
+export type RuleKey = GroupKey | 'DANGEROUS';
+
+// Quy tắc: 2 nhóm a và b (không phân biệt thứ tự) KHÔNG được chung container. Người dùng chỉnh được; cặp mặc định
+// chỉ là ví dụ, phải đối chiếu quy định IMDG hiện hành.
+export interface SegregationRule {
+  a: RuleKey;
+  b: RuleKey;
+}
+
+// Kế hoạch tách nhóm của 1 phương án (hiển thị ở bảng kết quả và PDF).
+export interface SegregationSet {
+  index: number;            // thứ tự bộ (từ 1)
+  groupKeys: GroupKey[];    // các nhóm hàng tương thích nằm chung trong bộ này
+  skus: string[];
+  containerIds: string[];   // container dùng cho bộ này (không bộ nào dùng chung container với bộ khác)
+  destinationPort?: string; // cảng đích chung của bộ hàng (không có = hàng chưa ghi cảng đích)
+  temperatureC?: number;    // nhiệt độ cài đặt chung của bộ hàng lạnh (không có = hàng không đặt nhiệt độ)
+  containerNotes?: string[]; // ghi chú container lạnh: nhiệt độ cài đặt, vạch chiều cao, khe luồng khí
+}
+
+export interface SegregationPlan {
+  sets: SegregationSet[];
+  reasons: string[];        // lý do tách: cặp nhóm đang có trong lô mà quy tắc cấm chung container
+}
+
 export type ContainerStandardType =
   | '20FT'
   | '20FT_REEFER'
@@ -25,7 +123,8 @@ export type UnfitReason =
   | 'NO_SPACE'
   | 'OVERWEIGHT'
   | 'ROTATION_CONFLICT'
-  | 'STACK_CONFLICT';
+  | 'STACK_CONFLICT'
+  | 'TEMPERATURE_MISMATCH'; // hàng lạnh nhưng container đã chọn không phải container lạnh
 
 export type EditActionType = 'MOVE' | 'ROTATE' | 'SWAP' | 'DELETE' | 'REPACK';
 
@@ -66,14 +165,10 @@ export interface ContainerTemplate {
   // container lạnh/reefer) — không được đọc bởi bất kỳ constraint/engine nào.
   notes?: string;
 
-  // Dùng cho panel "Chi phí vận chuyển" (TransportCostPanel.tsx) — Đơn giá cước tính theo quãng
-  // đường thực tế (VNĐ/km, nhân với số km nhập tay), Giá container là chi phí CỐ ĐỊNH cho MỖI
-  // container cần dùng (VNĐ/container, không phụ thuộc quãng đường — vd phí nâng hạ/thuê vỏ), rồi
-  // nhân với số lượng container mà generateSolutions.ts tính ra. Optional vì container tự thêm
-  // (isCustom) chưa chắc người dùng đã điền ngay; container chuẩn trong containerSeed.ts LUÔN có
-  // giá trị mặc định tham khảo theo thị trường Việt Nam.
-  costPerTrip?: number;         // Giá container (VNĐ/container)
-  costPerKm?: number;           // Đơn giá cước (VNĐ/km)
+  // Container lạnh (reefer): chỉ hàng cùng nhiệt độ cài đặt mới chung container, chừa khe luồng khí quanh hàng, và
+  // `maxStackHeight` (mm, tính từ sàn) là vạch giới hạn chiều cao xếp — hàng không được vượt vạch (xem engine/reefer.ts).
+  refrigerated?: boolean;
+  maxStackHeight?: number;
 
   isCustom: boolean;
 }
@@ -93,6 +188,11 @@ export interface CargoImportRow {
   quantity: number;
   rotationRaw?: string;         // giá trị thô từ excel, map sang RotationAxis khi validate
   colorRaw?: string;            // giá trị thô cột "Màu" từ excel (hex), chuẩn hóa khi validate
+  deliveryPointRaw?: string;    // giá trị thô cột "Điểm giao" từ excel (tên điểm giao của hàng)
+  cargoGroupRaw?: string;       // giá trị thô cột "Nhóm hàng" từ excel (thường/thực phẩm/có mùi/hóa chất/nguy hiểm)
+  dangerClassRaw?: string;      // giá trị thô cột "Lớp" (IMDG 1–9) từ excel
+  customerRaw?: string;         // giá trị thô cột "Khách hàng" từ excel
+  destinationPortRaw?: string;  // giá trị thô cột "Cảng đích" từ excel
   valid: boolean;
   errors?: string[];
 }
@@ -132,6 +232,29 @@ export interface CargoTemplate {
   clearance: Clearance;
 
   priority?: number;
+
+  // Có mặt = bật "Xếp lên pallet" cho loại thùng này (xem PalletizeParams). Không ảnh hưởng cách
+  // xếp vào container hiện tại — thùng vẫn là kiện rời trong packContainer.
+  palletize?: PalletizeParams;
+
+  // Dung sai kích thước MỖI CHIỀU (mm) riêng cho loại hàng này; không đặt = dùng ToleranceSettings.defaultDimensionTolerance.
+  // Chỉ có tác dụng khi ToleranceSettings.enabled (xem engine/tolerance.ts).
+  tolerance?: number;
+
+  // Khách hàng và cảng đích của loại hàng (thông tin hiển thị; màu hàng trong 3D mặc định tô theo khách hàng, xem utils/customerColor.ts).
+  customer?: string;
+  destinationPort?: string;
+
+  // Nhiệt độ cài đặt (°C) của hàng lạnh — chỉ xếp được vào container lạnh, và chỉ hàng cùng nhiệt độ mới chung container.
+  setTemperatureC?: number;
+
+  // Nhóm hàng đặc biệt (không đặt = hàng thường) và lớp IMDG 1–9 (chỉ có nghĩa khi cargoGroup = 'DANGEROUS').
+  cargoGroup?: SpecialGroup;
+  dangerClass?: DangerClass;
+
+  // Tên điểm giao lấy từ cột "Điểm giao" của file import (không có nếu nhập tay/file thiếu cột).
+  // Dùng để tự tạo danh sách điểm giao + gán hàng của chuyến, xem utils/tripDeliveryPoints.ts.
+  deliveryPoint?: string;
 }
 
 // ============================================================
@@ -160,6 +283,15 @@ export interface Placement {
   supportRatio: number;              // 0..1
   supportedByPlacementIds: string[]; // rỗng nếu đặt trực tiếp trên sàn
   stackLevel: number;
+
+  // Có mặt = placement này là 1 PALLET đã xếp thùng (khối cứng — không tách thùng khỏi pallet): length/
+  // width/height/weight là của CẢ khối, còn vị trí từng thùng lưu trong palletLoad.layers (toạ độ
+  // cục bộ theo pallet, xem engine/palletizing/palletBoxes.ts để quy ra toạ độ container).
+  palletLoad?: PalletLoad;
+
+  // true = thùng THỪA của SKU xếp pallet (không đủ 1 lớp pallet) được xếp rời vào container — khác
+  // với hàng trên pallet (palletLoad) và hàng thường không bật xếp pallet.
+  palletLeftover?: boolean;
 }
 
 export interface ExtremePoint {
@@ -199,7 +331,6 @@ export interface VehiclePlanItem {
 export interface VehiclePlan {
   id: string;
   items: VehiclePlanItem[];      // ví dụ: [{40ftHC, 1}, {20ft, 1}]
-  totalCost: number;
   feasible: boolean;
 }
 
@@ -235,13 +366,22 @@ export interface UnfitCargo {
   cargoInstanceId: string;
   cargoTemplateId: string;
   reason: UnfitReason;
+  // Số thùng thật của mục này: pallet chưa xếp được chứa nhiều thùng; không có = 1 (kiện rời).
+  boxCount?: number;
 }
 
 export interface SolutionStats {
   volumeFillPercent: number;
   payloadUsagePercent: number;
   containerCount: number;
-  totalCost: number;
+  // Thống kê THEO THÙNG: pallet là khối cứng nhưng vẫn đếm từng thùng bên trong.
+  boxCount: number;               // tổng số thùng/kiện đã xếp (thùng trên pallet + kiện rời)
+  palletCount: number;            // số pallet đã xếp vào container
+  looseBoxCount: number;          // số thùng thừa của SKU xếp pallet được xếp rời (không nằm trên pallet)
+  partialPalletCount: number;     // số "Pallet lẻ" (pallet cuối ít thùng hơn pallet đầy)
+  partialPalletBoxCount: number;  // tổng số thùng nằm trên các pallet lẻ
+  airbagCount: number;            // số túi khí chèn lót cần dùng (khe giữa hai cột pallet + các khe khác)
+  boxVolumeFillPercent: number;   // % thể tích container do CHÍNH các thùng/kiện chiếm (không tính khoảng trống/đế pallet)
 }
 
 // ============================================================
@@ -256,6 +396,41 @@ export interface PackingSolution {
   cgWarnings: CenterOfGravityWarning[];   // P2
   loadingSteps: LoadingStep[];            // P2
   stats: SolutionStats;
+  // Cảnh báo bố cục (vd khe giữa hai cột pallet nằm ngoài khoảng túi khí cho phép) — hiển thị ở thanh tổng kết/PDF.
+  layoutWarnings: string[];
+  // Ghi chú "đã tính dung sai X cm" (rỗng nếu tắt dung sai) — hiển thị ở tổng kết và bản xuất PDF.
+  toleranceNotes: string[];
+  // Tách nhóm hàng không được chung container (xem engine/segregation.ts).
+  segregation: SegregationPlan;
+}
+
+// Chèn lót (xem engine/optimization/dunnage.ts): khe trống phẳng giữa 2 mặt song song (hàng với hàng,
+// hàng với vách/cửa) cần chèn túi khí hoặc khối gỗ. Toạ độ/kích thước theo hệ toạ độ container (mm).
+// Mọi khe đều chèn bằng túi khí (không còn khối gỗ): khe ngoài khoảng túi khí cho phép không được chèn.
+// source: CENTER = khe giữa hai cột pallet (mỗi hàng pallet 1 túi); GENERIC = khe khác (chia ô túi tiêu chuẩn).
+export type DunnageSource = 'CENTER' | 'GENERIC';
+export type DunnageAxis = 'LENGTH' | 'WIDTH'; // trục theo bề dày khe: chiều dài (x) hoặc chiều rộng (y) container
+
+export interface DunnageBag {
+  // Cỡ túi khí (nhãn) và số túi chồng lên nhau theo chiều cao (1 hoặc 2) — chỉ có ở túi do dunnage.ts tạo.
+  sizeLabel?: string;
+  stackCount?: number;
+  x: number;
+  y: number;
+  z: number;
+  length: number;
+  width: number;
+  height: number;
+}
+
+export interface DunnageGap extends DunnageBag {
+  id: string;
+  source: DunnageSource;
+  axis: DunnageAxis;
+  gapSize: number;     // bề dày khe (mm) theo trục khe
+  wall: boolean;       // true nếu 1 bên của khe là vách/cửa container
+  bags: DunnageBag[];  // từng túi khí trong khe
+  bagCount: number;    // số túi khí cần dùng
 }
 
 // Gợi ý đổi loại container/xe cho CONTAINER CUỐI CÙNG của 1 solution nhiều container, khi
@@ -266,7 +441,6 @@ export interface PackingSolution {
 export interface ContainerSuggestion {
   suggestedTemplateId: string;
   fillRatioBefore: number;        // 0..1 — tỷ lệ lấp đầy cao hơn giữa thể tích/tải trọng TRƯỚC khi đổi
-  estimatedSavings: number | null; // VNĐ/chuyến, ước tính so với costPerTrip hiện tại — null nếu thiếu số liệu costPerTrip để so
 }
 
 // ============================================================
@@ -315,12 +489,6 @@ export interface AppState {
   solution: PackingSolution | null;    // 1 thuật toán extreme point duy nhất, không còn chọn phương án
   lastContainerSuggestion: ContainerSuggestion | null; // gợi ý đổi xe cho container cuối, xem ContainerSuggestion
 
-  // Quãng đường vận chuyển (km) người dùng nhập ở TransportCostPanel — nâng lên store (thay vì
-  // state cục bộ của riêng panel đó) để suggestBetterContainer cũng dùng được cùng 1 giá trị khi
-  // so sánh chi phí costPerTrip + costPerKm*km giữa các loại xe/container (xem
-  // engine/optimization/suggestBetterContainer.ts). 0 = chưa nhập/không tính theo cước km.
-  transportDistanceKm: number;
-
   activeContainerInstanceId: string | null;
   editHistory: EditHistoryState;
 
@@ -334,6 +502,11 @@ export interface AppState {
     // tên để xoay 90°/lần) thay vì chế độ di chuyển mặc định (kéo thân kiện, không hiện mũi tên
     // nào) — xem CameraToolbar.tsx/DraggablePlacement.tsx. Luôn tắt khi bỏ chọn kiện hàng.
     rotateModeActive: boolean;
+    // Id thùng (trong 1 pallet) đang chọn để xem thông tin — dạng `${placementId}__box-${n}` (xem
+    // engine/palletizing/palletBoxes.ts); chỉ có nghĩa khi pallet chứa nó đang được chọn.
+    selectedBoxId: string | null;
+    // Bật/tắt lớp "Chèn lót" (túi khí/khối gỗ trong các khe) trong khung 3D — mặc định bật.
+    showDunnage: boolean;
   };
 }
 // ============================================================
@@ -465,7 +638,12 @@ export interface TripPlanStop {
   stopId: string;
   order: number;          // thứ tự giao hàng, 0 = giao đầu tiên
   name: string;            // tên/địa chỉ điểm giao, nhập tay
-  etaMinutes: number;      // ETA tính từ lúc xuất phát (phút) — cùng mốc thời gian với Black Box (t=0 lúc xuất phát)
+  // Giờ dự kiến đến dạng giờ đồng hồ "HH:MM" người dùng nhập — để trống được (undefined/rỗng).
+  etaClock?: string;
+  // ETA quy đổi từ etaClock so với TripPlanRecord.departureTime, tính từ lúc xuất phát (phút) — cùng
+  // mốc thời gian với Black Box (t=0 lúc xuất phát). undefined nếu để trống giờ đến hoặc chưa nhập
+  // giờ xuất phát. Xem utils/tripTime.ts.
+  etaMinutes?: number;
 }
 
 // Tham chiếu 1 kiện hàng đã xếp (không copy lại toàn bộ CargoTemplate) tới điểm giao của nó — xem
@@ -480,6 +658,8 @@ export interface TripPlanRecord {
   tripId: string;
   name: string;
   createdAt: number;       // epoch ms, Date.now() lúc lưu
+  // Giờ xuất phát dạng "HH:MM" (mốc t=0 để quy đổi etaClock của từng điểm giao sang etaMinutes).
+  departureTime?: string;
   stops: TripPlanStop[];
   cargo: TripPlanCargoRef[];
   // Khoảng cách (km) giữa từng CẶP điểm giao — người dùng tự nhập tay (app không có nguồn toạ
@@ -532,6 +712,9 @@ export interface TripRouteProposal {
   containerTemplateId: string;         // loại xe/container được chọn cho phương án này
   stopOrder: string[];                 // thứ tự stopId đề xuất (điểm giao đầu tiên ở vị trí 0)
   estimatedDistanceKm: number;         // tổng quãng đường ước lượng của thứ tự ĐƯỢC CHỌN
+  // Số đoạn liên tiếp trong thứ tự được chọn mà người dùng CHƯA nhập khoảng cách (để trống) — các
+  // đoạn đó KHÔNG được tính vào estimatedDistanceKm. Optional để tương thích với phương án đã lưu.
+  unknownLegCount?: number;
   shortestPossibleDistanceKm: number;  // quãng đường của thứ tự ngắn nhất đã xét (không xét ràng buộc chắn hàng) — để so sánh
   fillRatioPercent: number;            // tỷ lệ lấp đầy container ở phương án xếp được chọn (0..100)
   blockedCount: number;                // số kiện bị chắn ở phương án ĐƯỢC CHỌN — luôn = 0

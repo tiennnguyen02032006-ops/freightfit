@@ -1,4 +1,5 @@
 import type { CargoTemplate, Placement } from '../../domain/types';
+import { templateKeyOf } from './templateKey';
 
 export function respectsContainerPayload(
   currentTotalWeight: number,
@@ -18,7 +19,7 @@ export function respectsLoadOnTop(
   itemWeight: number,
 ): boolean {
   return belowPlacements.every((p) => {
-    const template = belowTemplates.get(p.cargoTemplateId);
+    const template = belowTemplates.get(templateKeyOf(p));
     if (!template || template.maxLoadOnTop === undefined) return true;
     return itemWeight <= template.maxLoadOnTop;
   });

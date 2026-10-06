@@ -1,11 +1,13 @@
 import type { StateCreator } from 'zustand';
 import type { CargoTemplate, ContainerSuggestion, PackingSolution, VehiclePlan } from '../../domain/types';
 import { PLACEMENT_SCORE_WEIGHTS } from '../../engine/config';
+import { wallMarginOf } from '../../engine/tolerance';
 import { generateSolution } from '../../engine/optimization/generateSolutions';
 import { computeCgWarnings } from '../../engine/optimization/centerOfGravity';
 import { computeSolutionStats } from '../../engine/optimization/stats';
 import { expandContainerPlacements, suggestBetterContainer } from '../../engine/optimization/suggestBetterContainer';
 import { packContainer } from '../../engine/packing/packContainer';
+import { applyPalletLayout } from '../../engine/palletizing/palletLayout';
 import type { RootStore } from '../index';
 
 // Đã bỏ khái niệm nhiều phương án (cost/space/balanced) — chỉ còn 1 thuật toán extreme point
@@ -34,7 +36,9 @@ export const createSolutionSlice: StateCreator<RootStore, [], [], SolutionSlice>
     const containerTemplate = get().containerLibrary.find((c) => c.id === containerTemplateId);
     if (!containerTemplate) return;
     const cargoTemplates = get().cargoTemplates;
-    const solution = generateSolution(cargoTemplates, containerTemplate);
+    // Dung sai xếp hàng (cấu hình ở store.tolerance): xem engine/tolerance.ts.
+    const tolerance = get().tolerance;
+    const solution = generateSolution(cargoTemplates, containerTemplate, tolerance, get().segregationRules);
 
     const lastContainer = solution.containers[solution.containers.length - 1];
     const cargoTemplatesById = new Map(cargoTemplates.map((t) => [t.id, t] as const));
@@ -44,7 +48,7 @@ export const createSolutionSlice: StateCreator<RootStore, [], [], SolutionSlice>
           currentTemplate: containerTemplate,
           cargoTemplatesById,
           containerLibrary: get().containerLibrary,
-          distanceKm: get().transportDistanceKm,
+          tolerance,
         })
       : null;
 
@@ -56,7 +60,7 @@ export const createSolutionSlice: StateCreator<RootStore, [], [], SolutionSlice>
       lastContainerSuggestion,
       activeContainerInstanceId: solution.containers[0]?.id ?? null,
       currentStepIndex: 0,
-      ui: { ...state.ui, selectedPlacementId: null, rotateModeActive: false },
+      ui: { ...state.ui, selectedPlacementId: null, selectedBoxId: null, rotateModeActive: false },
     }));
   },
 
@@ -90,7 +94,7 @@ export const createSolutionSlice: StateCreator<RootStore, [], [], SolutionSlice>
     const cargoTemplatesById: Map<string, CargoTemplate> = new Map(
       state.cargoTemplates.map((t) => [t.id, t] as const),
     );
-    const sortedItems = expandContainerPlacements(lastContainer, cargoTemplatesById);
+    const sortedItems = expandContainerPlacements(lastContainer, cargoTemplatesById, state.tolerance);
 
     // Giữ nguyên containerInstanceId/containerIndex — chỉ đổi TEMPLATE dùng để xếp, không đổi vị
     // trí của container này trong danh sách (cgWarnings/UI đang tham chiếu theo containerInstanceId
@@ -99,7 +103,8 @@ export const createSolutionSlice: StateCreator<RootStore, [], [], SolutionSlice>
       containerTemplate: newTemplate,
       containerInstanceId: lastContainer.id,
       containerIndex: lastContainer.index,
-      sortedItems,
+      sortedItems: applyPalletLayout(sortedItems, newTemplate, wallMarginOf(state.tolerance)),
+      wallMargin: wallMarginOf(state.tolerance),
       weights: PLACEMENT_SCORE_WEIGHTS,
     });
     // An toàn: suggestBetterContainer() đã xác nhận newTemplate xếp vừa HẾT đúng bộ hàng này nên
@@ -137,9 +142,8 @@ export const createSolutionSlice: StateCreator<RootStore, [], [], SolutionSlice>
       stats,
       // vehiclePlan.items vẫn mô tả plan CŨ (1 loại/số lượng) — chưa đúng thực tế "container cuối
       // giờ khác loại" (cần cấu trúc nhiều items khác template, thuộc phạm vi
-      // vehicle/generatePlans.ts P3 chưa xây), chỉ cập nhật totalCost cho khớp stats mới, không tự
-      // bịa cấu trúc plan multi-loại chưa được yêu cầu.
-      vehiclePlan: { ...solution.vehiclePlan, totalCost: stats.totalCost },
+      // vehicle/generatePlans.ts P3 chưa xây), giữ nguyên plan cũ, không tự bịa cấu trúc plan
+      // multi-loại chưa được yêu cầu.
     };
 
     set({ solution: newSolution, lastContainerSuggestion: null });

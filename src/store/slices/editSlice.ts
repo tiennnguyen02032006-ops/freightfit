@@ -1,6 +1,7 @@
 import type { StateCreator } from 'zustand';
 import type { Placement } from '../../domain/types';
 import { revalidatePlacement, type CandidateBox } from '../../engine/revalidate';
+import { resolveBlockTemplate } from '../../engine/palletizing/palletBlock';
 import { applyPlacementsToSolution } from '../../engine/optimization/applyEdit';
 import type { RootStore } from '../index';
 
@@ -137,7 +138,7 @@ export const createEditSlice: StateCreator<RootStore, [], [], EditSlice> = (set,
       return false;
     }
 
-    const orientationIndex = template.allowedOrientations.findIndex(
+    const orientationIndex = resolveBlockTemplate(template, placement).allowedOrientations.findIndex(
       ([l, w, h]) => l === candidate.length && w === candidate.width && h === candidate.height,
     );
     const updatedPlacements = container.placements.map((p) => {

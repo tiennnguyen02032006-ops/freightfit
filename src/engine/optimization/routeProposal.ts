@@ -5,6 +5,8 @@ import type {
   TripPlanStop,
   TripRouteProposal,
   TripRouteResult,
+  SegregationRule,
+  ToleranceSettings,
   TripStopDistance,
 } from '../../domain/types';
 import { findBlockingPairs } from '../constraints/deliveryOrder';
@@ -33,14 +35,33 @@ function distanceLookup(distances: TripStopDistance[]): (a: string, b: string) =
   return (a, b) => map.get(`${a}|${b}`);
 }
 
-function routeDistance(order: string[], lookup: (a: string, b: string) => number | undefined): number | null {
-  let total = 0;
+/**
+ * Quãng đường của 1 thứ tự giao: tổng các đoạn ĐÃ BIẾT khoảng cách + số đoạn còn để trống (chưa
+ * biết — không tính vào tổng km). Thứ tự ít đoạn chưa biết hơn được ưu tiên trước, vì số km của nó
+ * đáng tin hơn; cùng số đoạn chưa biết thì so theo km.
+ */
+function routeCost(
+  order: string[],
+  lookup: (a: string, b: string) => number | undefined,
+): { distance: number; unknown: number } {
+  let distance = 0;
+  let unknown = 0;
   for (let i = 0; i < order.length - 1; i++) {
     const d = lookup(order[i], order[i + 1]);
-    if (d === undefined) return null;
-    total += d;
+    if (d === undefined) unknown++;
+    else distance += d;
   }
-  return total;
+  return { distance, unknown };
+}
+
+interface OrderCandidate {
+  order: string[];
+  distance: number;
+  unknown: number;
+}
+
+function byCost(a: OrderCandidate, b: OrderCandidate): number {
+  return a.unknown - b.unknown || a.distance - b.distance;
 }
 
 /** Heap's algorithm — sinh mọi hoán vị của mảng, dùng cho nhánh duyệt hết (N nhỏ). */
@@ -121,6 +142,7 @@ export type ChooseStopOrderResult =
       stopOrder: string[];
       estimatedDistanceKm: number;
       shortestPossibleDistanceKm: number;
+      unknownLegCount: number;
       usedHeuristic: boolean;
     }
   | { feasible: false; reason: string; usedHeuristic: boolean };
@@ -144,6 +166,7 @@ export function chooseBestStopOrder(params: ChooseStopOrderParams): ChooseStopOr
       stopOrder: stopIds,
       estimatedDistanceKm: 0,
       shortestPossibleDistanceKm: 0,
+      unknownLegCount: 0,
       usedHeuristic: false,
     };
   }
@@ -177,20 +200,15 @@ export function chooseBestStopOrder(params: ChooseStopOrderParams): ChooseStopOr
 
   const deadline = Date.now() + timeBudgetMs;
   let usedHeuristic = stopIds.length > EXHAUSTIVE_MAX_STOPS;
-  let best: { order: string[]; distance: number } | null = null;
+  let best: OrderCandidate | null = null;
   let shortestSeen: number;
 
   if (!usedHeuristic) {
-    const all: Array<{ order: string[]; distance: number }> = [];
+    const all: OrderCandidate[] = [];
     for (const perm of permutations(stopIds)) {
-      const d = routeDistance(perm, lookup);
-      if (d === null) continue;
-      all.push({ order: perm, distance: d });
+      all.push({ order: perm, ...routeCost(perm, lookup) });
     }
-    if (all.length === 0) {
-      return { feasible: false, reason: 'Thiếu khoảng cách giữa một số cặp điểm giao — chưa nhập đủ.', usedHeuristic: false };
-    }
-    all.sort((a, b) => a.distance - b.distance);
+    all.sort(byCost);
     shortestSeen = all[0].distance;
     for (const cand of all) {
       if (Date.now() > deadline) {
@@ -203,22 +221,17 @@ export function chooseBestStopOrder(params: ChooseStopOrderParams): ChooseStopOr
       }
     }
   } else {
-    const candidates: Array<{ order: string[]; distance: number }> = [];
+    const candidates: OrderCandidate[] = [];
     for (const start of stopIds) {
       if (Date.now() > deadline) break;
       const order = nearestNeighborOrder(start, stopIds, lookup);
-      const d = routeDistance(order, lookup);
-      if (d !== null) candidates.push({ order, distance: d });
+      candidates.push({ order, ...routeCost(order, lookup) });
     }
     while (Date.now() < deadline && candidates.length < stopIds.length + 50) {
       const order = shuffle(stopIds);
-      const d = routeDistance(order, lookup);
-      if (d !== null) candidates.push({ order, distance: d });
+      candidates.push({ order, ...routeCost(order, lookup) });
     }
-    if (candidates.length === 0) {
-      return { feasible: false, reason: 'Thiếu khoảng cách giữa một số cặp điểm giao — chưa nhập đủ.', usedHeuristic: true };
-    }
-    candidates.sort((a, b) => a.distance - b.distance);
+    candidates.sort(byCost);
     shortestSeen = candidates[0].distance;
     for (const cand of candidates) {
       if (Date.now() > deadline) break;
@@ -242,6 +255,7 @@ export function chooseBestStopOrder(params: ChooseStopOrderParams): ChooseStopOr
     stopOrder: best.order,
     estimatedDistanceKm: best.distance,
     shortestPossibleDistanceKm: shortestSeen,
+    unknownLegCount: best.unknown,
     usedHeuristic,
   };
 }
@@ -253,6 +267,8 @@ export interface ProposeSingleRouteParams {
   distances: TripStopDistance[];
   stopIdByCargoTemplateId: Map<string, string>;
   timeBudgetMs?: number;
+  tolerance?: ToleranceSettings;
+  segregationRules?: SegregationRule[];
 }
 
 /**
@@ -262,7 +278,7 @@ export interface ProposeSingleRouteParams {
  * đầu tiên khả thi; nếu không có phương án nào, trả lý do + gợi ý nới (KHÔNG tự áp dụng).
  */
 export function proposeSingleRoute(params: ProposeSingleRouteParams): TripRouteResult {
-  const { cargoTemplates, containerLibrary, stops, distances, stopIdByCargoTemplateId, timeBudgetMs } = params;
+  const { cargoTemplates, containerLibrary, stops, distances, stopIdByCargoTemplateId, timeBudgetMs, tolerance, segregationRules } = params;
 
   if (cargoTemplates.length === 0) {
     return { feasible: false, reason: 'Chưa có hàng hoá nào để xếp.', suggestion: 'Thêm hàng hoá trước khi đề xuất phương án.' };
@@ -281,7 +297,7 @@ export function proposeSingleRoute(params: ProposeSingleRouteParams): TripRouteR
   let bestAttemptReason: string | null = null;
 
   for (const template of candidates) {
-    const solution = generateSolution(cargoTemplates, template);
+    const solution = generateSolution(cargoTemplates, template, tolerance, segregationRules);
     if (solution.unfitCargo.length > 0 || solution.containers.length !== 1) {
       bestAttemptReason = `Xe "${template.name}" không chở hết toàn bộ hàng hoá trong 1 chuyến.`;
       if (containerLibrary.length <= 1) break;
@@ -305,6 +321,7 @@ export function proposeSingleRoute(params: ProposeSingleRouteParams): TripRouteR
         stopOrder: orderResult.stopOrder,
         estimatedDistanceKm: orderResult.estimatedDistanceKm,
         shortestPossibleDistanceKm: orderResult.shortestPossibleDistanceKm,
+        unknownLegCount: orderResult.unknownLegCount,
         fillRatioPercent,
         blockedCount: 0,
         usedHeuristic: orderResult.usedHeuristic,

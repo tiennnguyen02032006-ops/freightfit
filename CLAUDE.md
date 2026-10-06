@@ -2,13 +2,12 @@
 
 Hệ thống tối ưu xếp hàng 3D vào container/xe tải. **Frontend-only, không backend.** State chỉ tồn tại in-memory lúc runtime (mất khi refresh) — KHÔNG thêm localStorage/IndexedDB/API trừ khi được yêu cầu rõ.
 
-**Ngoại lệ persistence (đã được yêu cầu rõ):** state nghiệp vụ (solution, cargoTemplates, containerLibrary...) vẫn in-memory, KHÔNG lưu. localStorage CHỈ được dùng ở đúng 4 nơi sau, không tự thêm nơi nào khác:
+**Ngoại lệ persistence (đã được yêu cầu rõ):** state nghiệp vụ (solution, cargoTemplates, containerLibrary...) vẫn in-memory, KHÔNG lưu. localStorage CHỈ được dùng ở đúng 3 nơi sau, không tự thêm nơi nào khác:
 - `src/storage/tripStorage.ts` (khóa `freightfit:trips:v1`) — "kế hoạch chuyến" (từ lúc xếp hàng 3D, gồm cả phương án đề xuất giao hàng "Giai đoạn C") và dữ liệu THỰC TẾ của chuyến (đối chiếu với Black Box). Xem `src/domain/types.ts` mục 13-14 (`TripPlanRecord`/`TripActualRecord`/`StoredTrips`/`TripRouteResult`). Đây là module DUY NHẤT được phép đọc/ghi cho phạm vi dữ liệu chuyến này.
 - `src/utils/skuColorStorage.ts` (khóa `freightfit:sku-colors`) — màu tùy chỉnh người dùng gán theo SKU, áp dụng cho mọi template cùng SKU.
 - `src/App.tsx` (khóa `freightfit.leftPanelWidth`) — nhớ chiều rộng panel trái đã kéo giữa các lần mở app.
-- `src/components/scene/DraggableStatsBar.tsx` (khóa `freightfit.sceneStatsBarPosition`) — nhớ vị trí đã kéo của thanh thống kê nổi trong khung 3D.
 
-3 nơi sau (skuColorStorage, leftPanelWidth, sceneStatsBarPosition) là tuỳ chọn giao diện thuần túy (UI preference), tách biệt hẳn với dữ liệu chuyến ở tripStorage.ts. Cả 4 nơi đều bọc try/catch, không crash app nếu trình duyệt chặn localStorage.
+2 nơi sau (skuColorStorage, leftPanelWidth) là tuỳ chọn giao diện thuần túy (UI preference), tách biệt hẳn với dữ liệu chuyến ở tripStorage.ts. Cả 3 nơi đều bọc try/catch, không crash app nếu trình duyệt chặn localStorage.
 
 ## Tech stack
 - React + TypeScript
@@ -45,6 +44,9 @@ src/
 │   ├── optimization/        generateSolutions (multi-container cùng 1 loại xe), stats,
 │   │                        centerOfGravity, suggestBetterContainer, applyEdit,
 │   │                        routeProposal (Giai đoạn C: chọn 1 thứ tự giao + xe không kiện nào bị chắn)
+│   ├── palletizing/         palletizeCargo (xếp thùng lên pallet theo lớp), palletBlock (pallet = khối cứng
+│   │                        đưa vào packContainer, số tầng pallet qua palletize.maxTiers), palletBoxes
+│   │                        (quy vị trí từng thùng ra toạ độ container để hiển thị/thống kê theo thùng)
 │   ├── blackbox/            mô hình + dữ liệu mô phỏng cho tab "Black Box" (điều tra sự cố giao
 │   │                        hàng) — độc lập hoàn toàn với engine xếp hàng 3D ở trên
 │   ├── revalidate.ts        dùng khi user kéo tay chỉnh sửa (P3, đã có)
@@ -62,7 +64,7 @@ src/
 ├── components/
 │   ├── scene/                ContainerScene, ContainerShell, CargoBox3D, DraggablePlacement,
 │   │                          camera/step-simulation controls...
-│   ├── panels/                AddCargoPanel, ImportPanel, TransportCostPanel, SavedTripsPanel
+│   ├── panels/                AddCargoPanel, ImportPanel, SavedTripsPanel
 │   │                          ("Chuyến hàng của bạn" — kế hoạch chuyến + Giai đoạn C), BlackBoxPanel
 │   └── shared/
 │
@@ -127,11 +129,18 @@ Mục "3 phương án hiển thị (cost/space/balanced)" đã bị BỎ theo y�
 ### Phase 3 — P3 — MỘT PHẦN
 - [x] Manual edit: move/rotate/swap trong scene 3D (`DraggablePlacement.tsx`) + gọi `revalidate.ts` ngay khi thả tay
 
-Còn thiếu (không tự làm khi chưa được yêu cầu rõ — xem "Việc KHÔNG làm" bên dưới): edit history (undo/redo, `EditHistoryState` khai báo sẵn trong `types.ts`/`store/index.ts` nhưng chưa có logic/UI nào dùng), multi-container theo TỔ HỢP nhiều loại xe khác nhau kèm `costCalculator` (hiện `generateSolutions.ts` chỉ tự lặp CÙNG 1 loại container đã chọn cho tới khi hết hàng hoặc không xếp thêm được), local search (move/swap/rotate/repack sau khi có solution feasible — `EVALUATOR_WEIGHTS`/`LOCAL_SEARCH_TIME_LIMIT_MS` đã khai báo sẵn trong `engine/config.ts` nhưng chưa có file `localSearch.ts`/`evaluator.ts` nào dùng tới).
+Còn thiếu (không tự làm khi chưa được yêu cầu rõ — xem "Việc KHÔNG làm" bên dưới): edit history (undo/redo, `EditHistoryState` khai báo sẵn trong `types.ts`/`store/index.ts` nhưng chưa có logic/UI nào dùng), multi-container theo TỔ HỢP nhiều loại xe khác nhau (hiện `generateSolutions.ts` chỉ tự lặp CÙNG 1 loại container đã chọn cho tới khi hết hàng hoặc không xếp thêm được), local search (move/swap/rotate/repack sau khi có solution feasible — `EVALUATOR_WEIGHTS`/`LOCAL_SEARCH_TIME_LIMIT_MS` đã khai báo sẵn trong `engine/config.ts` nhưng chưa có file `localSearch.ts`/`evaluator.ts` nào dùng tới).
 
 ### Đã làm thêm ngoài roadmap gốc
 - **Giai đoạn C** — chọn 1 phương án giao hàng đề xuất (thứ tự giao + xe, ràng buộc "không kiện nào bị chắn") cho 1 chuyến đã lưu. Xem `engine/constraints/deliveryOrder.ts`, `engine/optimization/routeProposal.ts`, khu "Chuyến hàng của bạn" trong `SavedTripsPanel.tsx`.
 - **"Chuyến hàng của bạn"** (`SavedTripsPanel.tsx` + `storage/tripStorage.ts`) — lưu kế hoạch chuyến (điểm giao, khoảng cách, gán hàng) và dữ liệu thực tế sau khi giao, tự động lưu, xuất/nhập file JSON để sao lưu.
+- **Xếp lên pallet** (`engine/palletizing/`, `components/panels/PalletPlanPanel.tsx`, `components/scene/PalletBlock3D.tsx`) — tuỳ chọn "Xếp lên pallet" trong form nhập hàng (`CargoTemplate.palletize`): mỗi pallet 1 SKU, xếp theo lớp (mỗi lớp thử các hướng đặt), thùng thừa tạo pallet lẻ. Khi tạo phương án, mỗi pallet vào container như 1 KHỐI CỨNG (`Placement.palletLoad`, không tách thùng khỏi pallet), tuân thủ tải trọng container và số tầng pallet tối đa; vị trí từng thùng vẫn lưu để vẽ 3D và thống kê theo thùng (`SolutionStats.boxCount/palletCount`). Thùng không lên pallet được vào `unfitCargo`.
+- **Chèn lót bằng túi khí** (`engine/optimization/dunnage.ts`, `engine/palletizing/palletLayout.ts`, `components/scene/DunnageLayer3D.tsx`) — pallet ưu tiên bố cục hai cột sát hai vách, chừa khe giữa chạy dọc container; mỗi hàng pallet 1 túi. Cỡ túi cấu hình trong `DUNNAGE_CONFIG.bagSizes` (rộng × cao + khoảng khe chèn được mỗi cỡ; mặc định 3 cỡ, chung 5–40 cm): chọn cỡ nhỏ nhất vừa khe và cao ≥ 2/3 pallet, không có thì 2 túi chồng (`engine/optimization/airbagSizes.ts`). Khe giữa phải chèn được bằng ít nhất 1 cỡ, nếu không thì thử đổi hướng pallet, không được thì cảnh báo (`PackingSolution.layoutWarnings`). Số túi hiện ở thống kê/PDF (`SolutionStats.airbagCount`); vẽ 3D bằng InstancedMesh, bật/tắt bằng nút "Chèn lót". Không còn khối gỗ chèn.
+- **Dung sai xếp hàng** (`engine/tolerance.ts`, `ToleranceSettings` trong store, `components/panels/ToleranceSettingsPanel.tsx`) — dung sai kích thước mỗi chiều của từng loại hàng (`CargoTemplate.tolerance`, mặc định thùng 1,5 cm) và khe giữa các pallet / pallet với vách container (mặc định 3 cm), mặc định BẬT trong app (engine mặc định không dung sai nếu không truyền cấu hình). Cộng vào trường `clearance` sẵn có (không có cơ chế mới): kiểm tra va chạm, số thùng mỗi lớp, vừa pallet dùng kích thước đã cộng dung sai, 3D vẫn vẽ kích thước thật; `packContainer` nhận `wallMargin` để chừa lề vách. Ghi "đã tính dung sai X cm" ở kế hoạch pallet và PDF. Chỉnh tay (revalidate) chưa tính dung sai.
+- **Khu vực kết quả xếp hàng** (`components/scene/ResultTopBar.tsx`, `ResultMetricsRow.tsx`, `ResultSidePanel.tsx`, `CameraToolbar.tsx`, `ContainerScene.tsx`; số liệu/cảnh báo thuần ở `utils/resultMetrics.ts`) — thanh trên cùng chỉ có chọn container + "Tạo phương án xếp hàng" + "Xuất PDF"; hàng số liệu (Khối lượng/Thể tích dạng thanh tiến trình, Thùng và pallet, Cân bằng, Túi khí) + 1 huy hiệu Cảnh báo gộp mọi cảnh báo; bảng bên phải thu gọn được với tab Tổng quan/Pallet/Chèn lót/An toàn; khung 3D chiếm phần còn lại với thanh chọn góc nhìn + công tắc "Chèn lót". Một màu nhấn (`--accent`), chữ xuống dòng thay vì cắt; bố cục đổi theo bề rộng cột giữa (container query). Đã bỏ dải thông tin nổi kéo-thả (`DraggableStatsBar`/`SceneStatsBar`) và dải `SolutionSummaryBar` — nội dung chuyển vào hàng số liệu/bảng bên phải.
+- **Nhóm hàng đặc biệt + tách nhóm** (`engine/segregation.ts`, `components/panels/SegregationRulesPanel.tsx`) — mỗi loại hàng có `cargoGroup` (thường/thực phẩm/có mùi/hóa chất/nguy hiểm kèm `dangerClass` 1–9; cột Excel "Nhóm hàng" + "Lớp"). Bảng quy tắc `segregationRules` (store, người dùng chỉnh được, mặc định chỉ là vài cặp VÍ DỤ) cấm cặp nhóm chung container; `generateSolution` chia hàng thành các bộ tương thích (`partitionCompatibleSets`) và xếp riêng từng bộ vào container riêng. Lý do tách hiện ở tab Tổng quan và bản xuất PDF (`PackingSolution.segregation`). Đây là ràng buộc cấp phương án, không nằm trong `packContainer.ts`.
+- **Hàng lạnh + container lạnh** (`engine/reefer.ts`, `HeightLimitLine.tsx`) — `CargoTemplate.setTemperatureC` (nhiệt độ cài đặt °C) và `ContainerTemplate.refrigerated/maxStackHeight` (vạch giới hạn chiều cao xếp, mm từ sàn). `generateSolution` chia lô theo nhiệt độ (hàng khác nhiệt độ, kể cả hàng không đặt nhiệt độ, không chung container; hàng lạnh vào container thường -> `TEMPERATURE_MISMATCH`), hạ lòng xe xuống vạch khi xếp/chỉnh tay (`packableContainer`, cả `revalidate.ts`) và chừa khe luồng khí `REEFER_AIR_GAP_MM` quanh hàng qua dung sai/clearance sẵn có. Nhiệt độ/vạch/khe hiện trong ghi chú tách nhóm (tab Tổng quan, PDF). Không mô phỏng nhiệt hay luồng khí.
+- **Khách hàng + cảng đích** (`CargoTemplate.customer/destinationPort`, `utils/customerColor.ts`) — màu hàng trong 3D/chú giải mặc định theo khách hàng (màu cố định suy từ tên, bật lại màu SKU được). `generateSolution` chia lô theo cảng đích (hàng khác cảng, kể cả hàng chưa ghi cảng, không chung container), rồi theo nhiệt độ, rồi theo nhóm hàng tương thích; lý do tách + cảng đích + khách hàng của từng container hiện ở ghi chú tách nhóm (Tổng quan, PDF). `sortCargo` xử lý hàng cùng khách hàng liên tục nên pallet cùng khách đặt liền nhau (mỗi pallet vốn chỉ 1 SKU = 1 khách).
 - **Black Box** (`engine/blackbox/`, `components/panels/BlackBoxPanel.tsx`) — tab điều tra nguyên nhân sự cố giao hàng trên dữ liệu MÔ PHỎNG, độc lập hoàn toàn với engine xếp hàng 3D.
 - **Export PDF** (`export/exportPdf.ts`, nút trong `DraggableStatsBar.tsx`) — đã làm, dù trước đây liệt trong Backlog P4.
 
@@ -140,6 +149,6 @@ Login/lưu lịch sử, responsive multi-device.
 
 ## Việc KHÔNG làm nếu không được yêu cầu rõ
 - Không thêm backend/API.
-- Không thêm persistence (localStorage/IndexedDB) ngoài đúng 4 nơi đã liệt ở "Ngoại lệ persistence" đầu file — state nghiệp vụ còn lại (solution, cargoTemplates, containerLibrary...) vẫn in-memory, đây vẫn là quyết định đã chốt.
+- Không thêm persistence (localStorage/IndexedDB) ngoài đúng 3 nơi đã liệt ở "Ngoại lệ persistence" đầu file — state nghiệp vụ còn lại (solution, cargoTemplates, containerLibrary...) vẫn in-memory, đây vẫn là quyết định đã chốt.
 - Không nhảy thẳng vào Simulated Annealing/Genetic Algorithm — chỉ Greedy + Local Search cho tới khi Phase 1-3 chạy ổn.
 - Không tự đổi đơn vị đo hoặc tự thêm field vào `types.ts` mà không cập nhật file gốc.

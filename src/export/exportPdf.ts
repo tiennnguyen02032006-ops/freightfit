@@ -2,6 +2,8 @@ import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import type { CargoTemplate, ContainerInstance, ContainerTemplate } from '../domain/types';
 import { formatMmAsCm, formatNumber } from '../components/shared/formatUnits';
+import { computeDunnageGaps, describeAirbagUsage, summarizeDunnage } from '../engine/optimization/dunnage';
+import { partialPalletsOf, countPlacementBoxes, placementBoxCount } from '../engine/palletizing/palletBoxes';
 
 /**
  * Xuất báo cáo PDF cho phương án xếp hàng. Phần PHÂN TÍCH DỮ LIỆU (gom nhóm hàng hóa, tính %
@@ -35,6 +37,9 @@ export interface ContainerReportSummary {
   usedWeightKg: number;
   usedVolumeM3: number;
   itemCount: number;
+  airbagCount: number; // số túi khí chèn lót cần dùng cho container này
+  airbagLines: string[]; // chi tiết theo cỡ túi: số túi, số túi chồng, chiều cao
+  partialPalletBoxCounts: number[]; // số thùng của từng "Pallet lẻ" trong container này
   volumeFillPercent: number;
   payloadUsagePercent: number;
 }
@@ -46,6 +51,12 @@ export interface ContainerReportInput {
   // Ảnh chụp scene 3D (PNG data URL) của ĐÚNG container này — optional, bỏ qua khối ảnh trong
   // report nếu không chụp được (vd trình duyệt chặn WebGL) thay vì làm hỏng cả report.
   imageDataUrl?: string;
+  // Cảnh báo bố cục của phương án (vd khe giữa hai cột pallet ngoài khoảng túi khí) — in ở cuối báo cáo.
+  warnings?: string[];
+  // Ghi chú "đã tính dung sai X cm" của phương án (rỗng/không có = không dung sai).
+  toleranceNotes?: string[];
+  // Nhóm hàng trong container + lý do tách nhóm không được chung container + nhắc đối chiếu IMDG.
+  segregationNotes?: string[];
 }
 
 /**
@@ -61,7 +72,7 @@ export function buildCargoLineItems(
   for (const placement of container.placements) {
     quantityByTemplateId.set(
       placement.cargoTemplateId,
-      (quantityByTemplateId.get(placement.cargoTemplateId) ?? 0) + 1,
+      (quantityByTemplateId.get(placement.cargoTemplateId) ?? 0) + placementBoxCount(placement),
     );
   }
 
@@ -91,6 +102,7 @@ export function buildContainerSummary(
     (containerTemplate.innerLength * containerTemplate.innerWidth * containerTemplate.innerHeight) /
     1_000_000_000;
   const usedVolumeM3 = container.usedVolume / 1_000_000_000;
+  const dunnage = computeDunnageGaps(container.placements, containerTemplate);
 
   return {
     name: containerTemplate.name,
@@ -102,7 +114,10 @@ export function buildContainerSummary(
     volumeM3,
     usedWeightKg: container.totalWeight,
     usedVolumeM3,
-    itemCount: container.placements.length,
+    itemCount: countPlacementBoxes(container.placements),
+    airbagCount: summarizeDunnage(dunnage).airbags,
+    airbagLines: describeAirbagUsage(dunnage),
+    partialPalletBoxCounts: partialPalletsOf(container.placements).map((p) => p.palletLoad?.boxCount ?? 0),
     volumeFillPercent: volumeM3 > 0 ? (usedVolumeM3 / volumeM3) * 100 : 0,
     payloadUsagePercent:
       containerTemplate.maxPayload > 0 ? (container.totalWeight / containerTemplate.maxPayload) * 100 : 0,
@@ -133,6 +148,9 @@ export interface ContainerReportHtmlInput {
   summary: ContainerReportSummary;
   lineItems: CargoLineItem[];
   imageDataUrl?: string;
+  warnings?: string[];
+  toleranceNotes?: string[];
+  segregationNotes?: string[];
   containerIndex: number; // 0-based
   containerTotal: number;
 }
@@ -145,7 +163,7 @@ export interface ContainerReportHtmlInput {
  * Việt có dấu hiển thị đúng (font chữ vector mặc định của jsPDF không có đủ ký tự tiếng Việt).
  */
 export function buildContainerReportHtml(input: ContainerReportHtmlInput): string {
-  const { summary, lineItems, imageDataUrl, containerIndex, containerTotal } = input;
+  const { summary, lineItems, imageDataUrl, containerIndex, containerTotal, warnings = [], toleranceNotes = [], segregationNotes = [] } = input;
 
   const rows = lineItems
     .map(
@@ -164,6 +182,24 @@ export function buildContainerReportHtml(input: ContainerReportHtmlInput): strin
 
   const imageBlock = imageDataUrl
     ? `<img src="${imageDataUrl}" style="width:100%; display:block; border:1px solid #d0d3da; border-radius:6px; margin:12px 0;" />`
+    : '';
+
+  const toleranceBlock = toleranceNotes.length
+    ? `<div style="margin:12px 0; padding:8px 12px; background:#eef6ff; border:1px solid #9cc4f0; border-radius:6px; font-size:11.5px; color:#1d4f8a;">${toleranceNotes
+        .map((n) => escapeHtml(n))
+        .join('<br/>')}</div>`
+    : '';
+
+  const segregationBlock = segregationNotes.length
+    ? `<div style="margin:12px 0; padding:8px 12px; background:#f4f0ff; border:1px solid #c9b6f5; border-radius:6px; font-size:11.5px; color:#4a2a8a;">${segregationNotes
+        .map((n) => escapeHtml(n))
+        .join('<br/>')}</div>`
+    : '';
+
+  const warningBlock = warnings.length
+    ? `<div style="margin:12px 0; padding:8px 12px; background:#fff4e5; border:1px solid #f0b36a; border-radius:6px; font-size:11.5px; color:#8a4b00;">${warnings
+        .map((w) => `⚠ ${escapeHtml(w)}`)
+        .join('<br/>')}</div>`
     : '';
 
   return `
@@ -193,6 +229,23 @@ export function buildContainerReportHtml(input: ContainerReportHtmlInput): strin
             <td style="padding:2px 0 2px 28px; color:#555;">Số kiện hàng đã xếp:</td>
             <td style="padding:2px 0; text-align:right; font-weight:600;">${summary.itemCount}</td>
           </tr>
+          <tr>
+            <td style="padding:2px 0; color:#555;">Túi khí chèn lót:</td>
+            <td style="padding:2px 0; text-align:right; font-weight:600;">${summary.airbagCount} túi</td>
+            <td></td>
+            <td></td>
+          </tr>
+          ${summary.partialPalletBoxCounts.length
+            ? `<tr><td style="padding:2px 0; color:#555;">Pallet lẻ:</td><td style="padding:2px 0; text-align:right; font-weight:600;">${summary.partialPalletBoxCounts.length} pallet</td><td colspan="2" style="padding:2px 0 2px 28px; color:#555;">${summary.partialPalletBoxCounts
+                .map((n) => `${n} thùng`)
+                .join(', ')}</td></tr>`
+            : ''}
+          ${summary.airbagLines
+            .map(
+              (line) =>
+                `<tr><td colspan="4" style="padding:0 0 2px 12px; color:#555; font-size:11px;">• ${escapeHtml(line)}</td></tr>`,
+            )
+            .join('')}
         </tbody>
       </table>
 
@@ -215,6 +268,12 @@ export function buildContainerReportHtml(input: ContainerReportHtmlInput): strin
       </div>
 
       ${imageBlock}
+
+      ${warningBlock}
+
+      ${toleranceBlock}
+
+      ${segregationBlock}
 
       <div style="font-size:14px; font-weight:700; margin:16px 0 6px;">Danh sách hàng hóa đã xếp (${
         lineItems.length
@@ -316,6 +375,9 @@ export async function generatePackingSolutionPdf(reports: ContainerReportInput[]
       summary,
       lineItems,
       imageDataUrl: report.imageDataUrl,
+      warnings: report.warnings,
+      toleranceNotes: report.toleranceNotes,
+      segregationNotes: report.segregationNotes,
       containerIndex: i,
       containerTotal: reports.length,
     });

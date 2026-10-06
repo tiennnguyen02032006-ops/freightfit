@@ -4,6 +4,8 @@ interface ContainerTabsBarProps {
   containers: ContainerInstance[];
   activeContainerId: string | undefined;
   onSelectContainer: (containerInstanceId: string) => void;
+  // Nhãn nhóm hàng của từng container (chỉ có khi phương án tách thành nhiều nhóm, xem engine/segregation.ts).
+  labels?: Record<string, string>;
 }
 
 /**
@@ -16,7 +18,7 @@ interface ContainerTabsBarProps {
  * thời TỰ RESET kèm theo (kiện đang chọn, chế độ xoay, bước mô phỏng) vì các trạng thái đó thuộc
  * về container CŨ, không còn ý nghĩa với container mới (xem store/index.ts `setActiveContainer`).
  */
-export function ContainerTabsBar({ containers, activeContainerId, onSelectContainer }: ContainerTabsBarProps) {
+export function ContainerTabsBar({ containers, activeContainerId, onSelectContainer, labels }: ContainerTabsBarProps) {
   return (
     <div className="container-tabs-bar">
       {containers.map((container, i) => (
@@ -28,6 +30,7 @@ export function ContainerTabsBar({ containers, activeContainerId, onSelectContai
           aria-pressed={container.id === activeContainerId}
         >
           Container {i + 1}
+          {labels?.[container.id] ? ` · ${labels[container.id]}` : ''}
         </button>
       ))}
     </div>

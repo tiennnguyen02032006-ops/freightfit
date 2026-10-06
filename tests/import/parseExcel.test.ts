@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { convertToMm, mapRowToCargoTemplate, validateImportRow } from '../../src/import/parseExcel';
+import { convertToMm, mapRowToCargoTemplate, toImportRow, validateImportRow } from '../../src/import/parseExcel';
 import type { CargoImportRow } from '../../src/domain/types';
 
 function makeRow(overrides: Partial<CargoImportRow> = {}): CargoImportRow {
@@ -52,5 +52,52 @@ describe('mapRowToCargoTemplate', () => {
     expect(template.allowedOrientations).toEqual([[400, 300, 200]]);
     expect(template.quantity).toBe(2);
     expect(template.color).toBe('#3388ff');
+  });
+});
+
+describe('mapRowToCargoTemplate — cột "Điểm giao"', () => {
+  it('chép deliveryPointRaw (đã trim) sang deliveryPoint', () => {
+    const template = mapRowToCargoTemplate(makeRow({ deliveryPointRaw: '  Hà Nội ' }), { unit: 'cm', color: '#3388ff' });
+    expect(template.deliveryPoint).toBe('Hà Nội');
+  });
+
+  it('không có cột thì deliveryPoint là undefined', () => {
+    const template = mapRowToCargoTemplate(makeRow(), { unit: 'cm', color: '#3388ff' });
+    expect(template.deliveryPoint).toBeUndefined();
+  });
+});
+
+describe('đọc cột "Khách hàng" và "Cảng đích" từ Excel', () => {
+  const base = { SKU: 'S1', 'Tên hàng': 'Hàng', Dài: 40, Rộng: 30, Cao: 20, 'Trọng lượng': 5, 'Số lượng': 2 };
+
+  it('nhận tên cột tiếng Việt', () => {
+    const row = toImportRow({ ...base, 'Khách hàng': '  Công ty A ', 'Cảng đích': ' Hải Phòng ' }, 0);
+    expect(row.customerRaw).toBe('Công ty A');
+    expect(row.destinationPortRaw).toBe('Hải Phòng');
+    const template = mapRowToCargoTemplate(row, { unit: 'cm', color: '#3388ff' });
+    expect(template.customer).toBe('Công ty A');
+    expect(template.destinationPort).toBe('Hải Phòng');
+  });
+
+  it('nhận tên cột tiếng Anh (không phân biệt hoa thường)', () => {
+    const row = toImportRow({ ...base, CUSTOMER: 'ACME', 'Destination Port': 'Singapore' }, 0);
+    expect(row.customerRaw).toBe('ACME');
+    expect(row.destinationPortRaw).toBe('Singapore');
+  });
+
+  it('nhận tên cột không dấu và biến thể ngắn', () => {
+    const row = toImportRow({ ...base, 'khach hang': 'B', Port: 'Busan' }, 0);
+    expect(row.customerRaw).toBe('B');
+    expect(row.destinationPortRaw).toBe('Busan');
+  });
+
+  it('thiếu cột hoặc ô trống -> undefined, dòng vẫn hợp lệ', () => {
+    const row = toImportRow({ ...base, 'Khách hàng': '   ' }, 0);
+    expect(row.customerRaw).toBeUndefined();
+    expect(row.destinationPortRaw).toBeUndefined();
+    expect(row.valid).toBe(true);
+    const template = mapRowToCargoTemplate(row, { unit: 'cm', color: '#3388ff' });
+    expect(template.customer).toBeUndefined();
+    expect(template.destinationPort).toBeUndefined();
   });
 });

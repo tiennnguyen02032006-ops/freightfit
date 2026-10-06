@@ -1,22 +1,51 @@
+import { useAppStore } from '../../store';
+
 export type CameraPreset = 'ISOMETRIC' | 'TOP' | 'SIDE';
 
 interface CameraToolbarProps {
+  value: CameraPreset;
   onSelectPreset: (preset: CameraPreset) => void;
 }
 
-// Chỉ còn 3 nút chọn góc nhìn camera — "Xem từng bước" và "Xoay 3 chiều" đã chuyển xuống cụm cố
-// định ở góc dưới-phải màn hình (xem SceneCornerCluster.tsx) để không trùng lặp ở 2 nơi.
-export function CameraToolbar({ onSelectPreset }: CameraToolbarProps) {
+const PRESETS: Array<{ id: CameraPreset; label: string }> = [
+  { id: 'ISOMETRIC', label: 'Isometric' },
+  { id: 'TOP', label: 'Top' },
+  { id: 'SIDE', label: 'Side' },
+];
+
+/**
+ * Thanh góc nhìn của khung 3D: 3 góc nhìn camera gom thành MỘT thanh chọn (chọn 1 trong 3, góc đang dùng được tô
+ * nhấn) + công tắc lớp "Chèn lót" (túi khí trong các khe, mặc định bật). "Xem từng bước" và "Xoay 3 chiều" vẫn
+ * nằm ở cụm góc dưới-phải khung 3D (SceneCornerCluster.tsx).
+ */
+export function CameraToolbar({ value, onSelectPreset }: CameraToolbarProps) {
+  const showDunnage = useAppStore((s) => s.ui.showDunnage);
+  const toggleDunnage = useAppStore((s) => s.toggleDunnage);
+
   return (
-    <div className="camera-toolbar">
-      <button type="button" onClick={() => onSelectPreset('ISOMETRIC')}>
-        Isometric
-      </button>
-      <button type="button" onClick={() => onSelectPreset('TOP')}>
-        Top
-      </button>
-      <button type="button" onClick={() => onSelectPreset('SIDE')}>
-        Side
+    <div className="result-viewbar">
+      <div className="result-segmented" role="radiogroup" aria-label="Góc nhìn">
+        {PRESETS.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            role="radio"
+            aria-checked={value === p.id}
+            className={value === p.id ? 'is-active' : undefined}
+            onClick={() => onSelectPreset(p.id)}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        className={`result-chip${showDunnage ? ' is-active' : ''}`}
+        aria-pressed={showDunnage}
+        onClick={toggleDunnage}
+        title="Bật/tắt lớp chèn lót (túi khí trong các khe)"
+      >
+        Chèn lót
       </button>
     </div>
   );

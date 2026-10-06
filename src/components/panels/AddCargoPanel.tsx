@@ -1,11 +1,15 @@
 import { useState } from 'react';
 import { useAppStore } from '../../store';
 import { computeAllowedOrientations } from '../../engine/preprocessing/orientation';
+import { DANGER_CLASSES, SPECIAL_GROUPS, groupLabel, groupKeyOf } from '../../engine/segregation';
+import { getPalletType } from '../../engine/preprocessing/palletTypes';
+import { hasPalletFormErrors, validatePalletForm } from '../../utils/palletForm';
+import { PalletFormSection } from './PalletFormSection';
 import { convertToMm, type LengthUnit } from '../../import/parseExcel';
 import { generateDistinctColor } from '../../utils/colorBySku';
 import { getPersistedSkuColor, setPersistedSkuColor } from '../../utils/skuColorStorage';
 import { formatMmAsCm } from '../shared/formatUnits';
-import type { CargoShapeType, CargoTemplate, RotationAxis } from '../../domain/types';
+import type { CargoShapeType, CargoTemplate, DangerClass, PalletTypeId, PalletizeParams, RotationAxis, SpecialGroup } from '../../domain/types';
 
 const zeroClearance = { left: 0, right: 0, front: 0, back: 0, top: 0, bottom: 0 };
 
@@ -19,6 +23,11 @@ export type ManualEntryUnit = Extract<LengthUnit, 'cm' | 'in' | 'ft'>;
 const emptyForm = {
   sku: '',
   shapeType: 'BOX' as CargoShapeType,
+  palletize: false,
+  palletType: '120x80' as PalletTypeId,
+  palletMaxHeight: '',
+  palletMaxWeight: '',
+  palletMaxTiers: '1',
   length: '',
   width: '',
   height: '',
@@ -31,6 +40,12 @@ const emptyForm = {
   mustKeepUpright: false,
   maxStackLevel: '',
   maxLoadOnTop: '',
+  cargoGroup: 'GENERAL' as 'GENERAL' | SpecialGroup, // nhóm hàng đặc biệt (xem engine/segregation.ts)
+  dangerClass: '3', // lớp IMDG 1–9, chỉ dùng khi cargoGroup = DANGEROUS
+  customer: '', // khách hàng — màu hàng trong 3D mặc định tô theo khách hàng
+  destinationPort: '',
+  temperature: '', // nhiệt độ cài đặt °C của hàng lạnh; trống = không phải hàng lạnh (xem engine/reefer.ts)
+  tolerance: '', // cm mỗi chiều; trống = dùng dung sai mặc định (xem ToleranceSettingsPanel)
 };
 
 export function AddCargoPanel() {
@@ -42,6 +57,8 @@ export function AddCargoPanel() {
 
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  // Hiện cả lỗi "ô còn trống" của khối Xếp lên pallet sau khi đã thử gửi form (trước đó chỉ báo lỗi ô đã nhập sai).
+  const [showPalletErrors, setShowPalletErrors] = useState(false);
   const [formOpen, setFormOpen] = useState(true);
   // id của template ĐANG SỬA (null = đang ở chế độ thêm mới) — cùng 1 form/state duy nhất cho cả
   // thêm mới và sửa, chỉ khác ở chỗ handleSubmit gọi updateCargoTemplate (giữ nguyên id) thay vì
@@ -49,6 +66,7 @@ export function AddCargoPanel() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const handleCancel = () => {
+    setShowPalletErrors(false);
     setForm(emptyForm);
     setError(null);
     setEditingId(null);
@@ -61,11 +79,17 @@ export function AddCargoPanel() {
   // cho input type="number"), mà chia thẳng cho 10 lấy số thô.
   const handleEdit = (t: CargoTemplate) => {
     setError(null);
+    setShowPalletErrors(false);
     setEditingId(t.id);
     setFormOpen(true);
     setForm({
       sku: t.sku,
       shapeType: t.shapeType,
+      palletize: t.palletize !== undefined,
+      palletType: t.palletize?.palletType ?? '120x80',
+      palletMaxHeight: t.palletize ? String(t.palletize.maxHeight / 10) : '',
+      palletMaxWeight: t.palletize ? String(t.palletize.maxWeight) : '',
+      palletMaxTiers: String(t.palletize?.maxTiers ?? 1),
       length: String(t.length / 10),
       width: String(t.width / 10),
       height: String(t.height / 10),
@@ -78,6 +102,12 @@ export function AddCargoPanel() {
       mustKeepUpright: t.mustKeepUpright,
       maxStackLevel: t.maxStackLevel != null ? String(t.maxStackLevel) : '',
       maxLoadOnTop: t.maxLoadOnTop != null ? String(t.maxLoadOnTop) : '',
+      tolerance: t.tolerance != null ? String(t.tolerance / 10) : '',
+      cargoGroup: t.cargoGroup ?? 'GENERAL',
+      dangerClass: String(t.dangerClass ?? 3),
+      temperature: t.setTemperatureC != null ? String(t.setTemperatureC) : '',
+      customer: t.customer ?? '',
+      destinationPort: t.destinationPort ?? '',
     });
   };
 
@@ -106,6 +136,33 @@ export function AddCargoPanel() {
     if (!(length > 0) || !(width > 0) || !(height > 0)) return setError('Kích thước phải > 0');
 
     const sku = form.sku.trim();
+
+    // Hàng nguy hiểm phải có lớp IMDG 1–9.
+    const temperatureText = form.temperature.trim().replace(',', '.');
+    const temperature = Number(temperatureText);
+    if (temperatureText !== '' && !Number.isFinite(temperature)) {
+      return setError('Nhiệt độ cài đặt phải là số (°C)');
+    }
+    const dangerClass = Number(form.dangerClass);
+    if (form.cargoGroup === 'DANGEROUS' && !(Number.isInteger(dangerClass) && dangerClass >= 1 && dangerClass <= 9)) {
+      return setError('Lớp hàng nguy hiểm phải là số nguyên từ 1 đến 9');
+    }
+
+    // "Xếp lên pallet": chiều cao tối đa (đơn vị đang chọn, đã gồm đế pallet) + khối lượng tối đa/pallet.
+    let palletize: PalletizeParams | undefined;
+    if (form.palletize && !isCylinder) {
+      // Lỗi hiện ngay dưới từng ô (PalletFormSection); ở đây chỉ chặn gửi form khi còn ô không hợp lệ.
+      if (hasPalletFormErrors(validatePalletForm(form, form.unit))) {
+        setShowPalletErrors(true);
+        return setError('Kiểm tra lại các ô trong khối "Xếp lên pallet"');
+      }
+      palletize = {
+        palletType: form.palletType,
+        maxHeight: convertToMm(Number(form.palletMaxHeight), form.unit),
+        maxWeight: Number(form.palletMaxWeight),
+        maxTiers: Number(form.palletMaxTiers),
+      };
+    }
 
     // Màu: chế độ SỬA giữ NGUYÊN màu cũ của template (màu chỉnh riêng qua color picker trong
     // cargo-list, không phải qua form này — xem yêu cầu tính năng chỉ liệt kê các field khác).
@@ -141,9 +198,18 @@ export function AddCargoPanel() {
       stackable: form.stackable,
       maxStackLevel: form.maxStackLevel ? Number(form.maxStackLevel) : undefined,
       maxLoadOnTop: form.maxLoadOnTop ? Number(form.maxLoadOnTop) : undefined,
+      // Dung sai riêng của SKU này (cm -> mm); trống = dùng dung sai mặc định của ToleranceSettings.
+      tolerance: form.tolerance.trim() !== '' && Number(form.tolerance) >= 0 ? Math.round(Number(form.tolerance) * 10) : undefined,
       fragile: form.fragile,
       mustKeepUpright,
       clearance: zeroClearance,
+      palletize,
+      ...(form.customer.trim() ? { customer: form.customer.trim() } : {}),
+      ...(form.destinationPort.trim() ? { destinationPort: form.destinationPort.trim() } : {}),
+      ...(temperatureText !== '' ? { setTemperatureC: temperature } : {}),
+      ...(form.cargoGroup !== 'GENERAL'
+        ? { cargoGroup: form.cargoGroup, ...(form.cargoGroup === 'DANGEROUS' ? { dangerClass: dangerClass as DangerClass } : {}) }
+        : {}),
     };
 
     if (editingId) {
@@ -153,6 +219,7 @@ export function AddCargoPanel() {
     }
     setForm(emptyForm);
     setEditingId(null);
+    setShowPalletErrors(false);
   };
 
   return (
@@ -188,7 +255,7 @@ export function AddCargoPanel() {
               <button
                 type="button"
                 className={`shape-toggle${form.shapeType === 'CYLINDER' ? ' is-active' : ''}`}
-                onClick={() => update('shapeType', 'CYLINDER')}
+                onClick={() => setForm((f) => ({ ...f, shapeType: 'CYLINDER', palletize: false }))}
                 aria-pressed={form.shapeType === 'CYLINDER'}
               >
                 Hình trụ
@@ -266,6 +333,15 @@ export function AddCargoPanel() {
             <option value="ft">feet</option>
           </select>
         </div>
+
+        {form.shapeType === 'BOX' && (
+          <PalletFormSection
+            value={form}
+            unit={form.unit}
+            onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
+            showAllErrors={showPalletErrors}
+          />
+        )}
 
         <div className="field-row icon-toggle-row">
           <button
@@ -349,6 +425,66 @@ export function AddCargoPanel() {
           </label>
         </div>
 
+        <div className="field-row">
+          <label className="field field-sm">
+            <span>Khách hàng</span>
+            <input value={form.customer} onChange={(e) => update('customer', e.target.value)} placeholder="tên khách hàng" />
+          </label>
+          <label className="field field-sm">
+            <span>Cảng đích</span>
+            <input value={form.destinationPort} onChange={(e) => update('destinationPort', e.target.value)} placeholder="cảng dỡ hàng" />
+          </label>
+        </div>
+
+        <div className="field-row">
+          <label className="field field-sm">
+            <span>Nhóm hàng</span>
+            <select value={form.cargoGroup} onChange={(e) => update('cargoGroup', e.target.value as 'GENERAL' | SpecialGroup)}>
+              {SPECIAL_GROUPS.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {form.cargoGroup === 'DANGEROUS' && (
+            <label className="field field-sm">
+              <span>Lớp (IMDG)</span>
+              <select value={form.dangerClass} onChange={(e) => update('dangerClass', e.target.value)}>
+                {DANGER_CLASSES.map((c) => (
+                  <option key={c} value={String(c)}>
+                    Lớp {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="field field-sm">
+            <span>Nhiệt độ cài đặt (°C)</span>
+            <input
+              type="number"
+              step="0.5"
+              value={form.temperature}
+              onChange={(e) => update('temperature', e.target.value)}
+              placeholder="hàng thường: để trống"
+            />
+          </label>
+        </div>
+
+        <div className="field-row">
+          <label className="field field-sm">
+            <span>Dung sai kích thước (cm/chiều)</span>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={form.tolerance}
+              onChange={(e) => update('tolerance', e.target.value)}
+              placeholder="mặc định"
+            />
+          </label>
+        </div>
+
         {error && <p className="form-error">{error}</p>}
 
         <div className="form-actions">
@@ -375,9 +511,14 @@ export function AddCargoPanel() {
                 aria-label={`Đổi màu cho SKU ${t.sku}`}
               />
               <div className="cargo-list-info">
-                <strong>{t.sku}</strong>
+                <strong>
+                  {t.sku}
+                  {t.palletize && (
+                    <span className="cargo-list-pallet-badge"> 🟫 Xếp lên pallet {getPalletType(t.palletize.palletType).label}</span>
+                  )}
+                </strong>
                 <span>
-                  {formatMmAsCm(t.length)}×{formatMmAsCm(t.width)}×{formatMmAsCm(t.height)} cm · {t.weight} kg · SL{' '}
+                  {formatMmAsCm(t.length)}×{formatMmAsCm(t.width)}×{formatMmAsCm(t.height)} cm · {t.weight} kg{t.tolerance != null ? ` · dung sai ${t.tolerance / 10} cm` : ''}{t.cargoGroup ? ` · ${groupLabel(groupKeyOf(t))}` : ''}{t.customer ? ` · KH ${t.customer}` : ''}{t.destinationPort ? ` · cảng ${t.destinationPort}` : ''}{t.setTemperatureC != null ? ` · lạnh ${t.setTemperatureC} °C` : ''} · SL{' '}
                   {t.quantity}
                 </span>
               </div>

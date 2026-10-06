@@ -5,7 +5,7 @@ import { makePlacement } from '../../fixtures/placement';
 import type { TripPlanStop, TripStopDistance } from '../../../src/domain/types';
 
 function stop(stopId: string, order: number): TripPlanStop {
-  return { stopId, order, name: stopId, etaMinutes: 0 };
+  return { stopId, order, name: stopId };
 }
 
 describe('chooseBestStopOrder', () => {
@@ -81,5 +81,34 @@ describe('chooseBestStopOrder', () => {
 
     const check = checkDeliveryOrder(placements, stopIdByCargoTemplateId, result.stopOrder);
     expect(check.blockedPlacementIds).toEqual([]);
+  });
+
+  it('cặp khoảng cách để trống vẫn ra phương án, đoạn chưa biết không tính vào km và được báo lại', () => {
+    const stops = [stop('stop-1', 0), stop('stop-2', 1), stop('stop-3', 2)];
+    const distances: TripStopDistance[] = [{ stopIdA: 'stop-1', stopIdB: 'stop-2', km: 4 }];
+    const placements = [makePlacement({ id: 'p1', cargoTemplateId: 'sku-x', x: 0, y: 0, z: 0 })];
+    const stopIdByCargoTemplateId = new Map([['sku-x', 'stop-1']]);
+
+    const result = chooseBestStopOrder({ placements, stopIdByCargoTemplateId, stops, distances });
+
+    expect(result.feasible).toBe(true);
+    if (!result.feasible) return;
+    expect(result.stopOrder).toHaveLength(3);
+    expect(result.unknownLegCount).toBe(1); // 3 điểm -> 2 đoạn, chỉ biết 1 đoạn
+    expect(result.estimatedDistanceKm).toBe(4);
+  });
+
+  it('không nhập khoảng cách nào: vẫn khả thi, mọi đoạn đều chưa biết', () => {
+    const stops = [stop('stop-1', 0), stop('stop-2', 1)];
+    const result = chooseBestStopOrder({
+      placements: [makePlacement({ id: 'p1', cargoTemplateId: 'sku-x', x: 0, y: 0, z: 0 })],
+      stopIdByCargoTemplateId: new Map([['sku-x', 'stop-1']]),
+      stops,
+      distances: [],
+    });
+    expect(result.feasible).toBe(true);
+    if (!result.feasible) return;
+    expect(result.unknownLegCount).toBe(1);
+    expect(result.estimatedDistanceKm).toBe(0);
   });
 });

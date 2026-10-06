@@ -7,15 +7,25 @@ import { ContainerShell } from './ContainerShell';
 import { TruckDecoration } from './TruckDecoration';
 import { TRUCK_LENGTH_MM, containerWallThickness, vehicleGroundClearance } from './containerGeometry';
 import { CargoBox3D } from './CargoBox3D';
+import { DunnageLayer3D } from './DunnageLayer3D';
+import { placementBoxCount } from '../../engine/palletizing/palletBoxes';
+import { computeDunnageGaps, summarizeDunnage } from '../../engine/optimization/dunnage';
+import { collectResultWarnings, computeResultMetrics, countUnfitBoxes } from '../../utils/resultMetrics';
 import { DraggablePlacement } from './DraggablePlacement';
 import { CameraToolbar, type CameraPreset } from './CameraToolbar';
 import { CenterOfGravityMarker } from './CenterOfGravityMarker';
-import { DraggableStatsBar } from './DraggableStatsBar';
+import { ResultTopBar } from './ResultTopBar';
+import { ResultMetricsRow } from './ResultMetricsRow';
+import { ResultSidePanel } from './ResultSidePanel';
 import { StepSimulationControls } from './StepSimulationControls';
 import { clampStepIndex, getVisiblePlacements } from './stepSimulation';
 import { SceneCornerCluster } from './SceneCornerCluster';
 import { CargoVisibilityPanel } from './CargoVisibilityPanel';
 import { ContainerTabsBar } from './ContainerTabsBar';
+import { groupLabel, segregationNotesFor } from '../../engine/segregation';
+import { formatTemperature, stackHeightLimit } from '../../engine/reefer';
+import { HeightLimitLine } from './HeightLimitLine';
+import { NO_CUSTOMER_LABEL, displayColor, normalizeCustomer, type ColorMode } from '../../utils/customerColor';
 import { downloadPackingSolutionPdf, type ContainerReportInput } from '../../export/exportPdf';
 
 // Đợi vài animation frame sau khi đổi activeContainerInstanceId (store) trước khi chụp canvas —
@@ -83,6 +93,7 @@ export function ContainerScene() {
   const toggleRotateMode = useAppStore((s) => s.toggleRotateMode);
   const setRotateMode = useAppStore((s) => s.setRotateMode);
   const viewMode = useAppStore((s) => s.ui.viewMode);
+  const showDunnage = useAppStore((s) => s.ui.showDunnage);
   const setViewMode = useAppStore((s) => s.setViewMode);
   const currentStepIndex = useAppStore((s) => s.currentStepIndex);
   const setCurrentStepIndex = useAppStore((s) => s.setCurrentStepIndex);
@@ -96,9 +107,9 @@ export function ContainerScene() {
 
   const [preset, setPreset] = useState<CameraPreset>('ISOMETRIC');
   const [highlightedPlacementId, setHighlightedPlacementId] = useState<string | null>(null);
-  // Div .scene-container thật — DraggableStatsBar.tsx dùng làm khung tọa độ tham chiếu để kẹp vị
-  // trí kéo trong vùng nhìn thấy, và làm nơi portal dải thông tin ra khi đã có vị trí tùy chỉnh.
-  const sceneContainerRef = useRef<HTMLDivElement>(null);
+  // Tải trọng tối đa CHỈNH TẠM THỜI theo từng loại container (key = containerTemplate.id) — chỉ đổi mẫu số hiển thị/cảnh báo
+  // quá tải, không ghi ngược vào thư viện và không ảnh hưởng lần "Tạo phương án" kế tiếp.
+  const [payloadOverrides, setPayloadOverrides] = useState<Record<string, number>>({});
   // WebGLRenderer thật của Canvas (gán qua onCreated bên dưới) — dùng để chụp ảnh sơ đồ xếp hàng
   // 3D lúc xuất PDF (renderer.domElement.toDataURL), xem handleExportPdf.
   const rendererRef = useRef<WebGLRenderer | null>(null);
@@ -152,6 +163,12 @@ export function ContainerScene() {
     : undefined;
 
   const templatesById = useMemo(() => new Map(cargoTemplates.map((t) => [t.id, t])), [cargoTemplates]);
+  // Cách tô màu hàng: mặc định theo khách hàng (mỗi khách 1 màu cố định), bật lại được màu theo SKU. Chỉ đổi màu VẼ.
+  const [colorMode, setColorMode] = useState<ColorMode>('customer');
+  const displayTemplatesById = useMemo(
+    () => new Map(cargoTemplates.map((t) => [t.id, { ...t, color: displayColor(t, colorMode) }])),
+    [cargoTemplates, colorMode],
+  );
 
   // Load order = thứ tự CÓ SẴN trong container.placements (packContainer.ts push đúng thứ tự
   // thuật toán quyết định xếp) — không tính lại. total steps = tổng số kiện; stepIndex được
@@ -178,11 +195,15 @@ export function ContainerScene() {
     setHiddenCargoTemplateIds(new Set());
   }
 
-  const toggleCargoVisibility = (cargoTemplateId: string) => {
+  // Bấm 1 mục chú giải: nếu mọi loại hàng của mục đang hiện thì làm mờ hết, ngược lại hiện lại hết.
+  const toggleCargoVisibility = (cargoTemplateIds: string[]) => {
     setHiddenCargoTemplateIds((prev) => {
       const next = new Set(prev);
-      if (next.has(cargoTemplateId)) next.delete(cargoTemplateId);
-      else next.add(cargoTemplateId);
+      const allHidden = cargoTemplateIds.every((id) => next.has(id));
+      for (const id of cargoTemplateIds) {
+        if (allHidden) next.delete(id);
+        else next.add(id);
+      }
       return next;
     });
   };
@@ -191,18 +212,31 @@ export function ContainerScene() {
     if (!container) return [];
     const countByTemplateId = new Map<string, number>();
     for (const p of container.placements) {
-      countByTemplateId.set(p.cargoTemplateId, (countByTemplateId.get(p.cargoTemplateId) ?? 0) + 1);
+      // Đếm THEO THÙNG: pallet (khối cứng) tính bằng số thùng trên pallet.
+      countByTemplateId.set(p.cargoTemplateId, (countByTemplateId.get(p.cargoTemplateId) ?? 0) + placementBoxCount(p));
     }
-    return Array.from(countByTemplateId.entries()).map(([cargoTemplateId, count]) => {
+    const items = new Map<string, { key: string; cargoTemplateIds: string[]; name: string; color: string; count: number }>();
+    for (const [cargoTemplateId, count] of countByTemplateId) {
       const template = templatesById.get(cargoTemplateId);
-      return {
-        cargoTemplateId,
-        name: template?.name ?? cargoTemplateId,
-        color: template?.color ?? '#999999',
+      const customerKey = normalizeCustomer(template?.customer);
+      // Chế độ khách hàng: gom mọi loại hàng của cùng 1 khách thành 1 mục chú giải.
+      const key = colorMode === 'customer' ? `customer:${customerKey ?? ''}` : cargoTemplateId;
+      const existing = items.get(key);
+      if (existing) {
+        existing.cargoTemplateIds.push(cargoTemplateId);
+        existing.count += count;
+        continue;
+      }
+      items.set(key, {
+        key,
+        cargoTemplateIds: [cargoTemplateId],
+        name: colorMode === 'customer' ? (template?.customer?.trim() || NO_CUSTOMER_LABEL) : (template?.name ?? cargoTemplateId),
+        color: template ? displayColor(template, colorMode) : '#999999',
         count,
-      };
-    });
-  }, [container, templatesById]);
+      });
+    }
+    return Array.from(items.values());
+  }, [container, templatesById, colorMode]);
 
   // Highlight tạm thời kiện vừa "thêm vào" ở bước hiện tại, tự tắt sau HIGHLIGHT_DURATION_MS —
   // reset mỗi khi bước hoặc chế độ simulation đổi để không giữ highlight cũ. Phần BẬT highlight đặt
@@ -307,6 +341,9 @@ export function ContainerScene() {
           container: containerInstance,
           cargoTemplatesById: templatesById,
           imageDataUrl,
+          warnings: solution.layoutWarnings,
+          toleranceNotes: solution.toleranceNotes,
+          segregationNotes: segregationNotesFor(solution.segregation, containerInstance.id),
         });
       }
       await downloadPackingSolutionPdf(reports);
@@ -315,6 +352,14 @@ export function ContainerScene() {
       setIsExportingPdf(false);
     }
   };
+
+  // Số liệu/cảnh báo/khe chèn lót của container ĐANG XEM — tính 1 lần ở đây rồi chia cho hàng số liệu, bảng bên
+  // phải và lớp 3D (không tính lại ở từng nơi).
+  const maxPayload = payloadOverrides[activeContainerTemplate?.id ?? ''] ?? activeContainerTemplate?.maxPayload ?? 0;
+  const dunnageGaps = useMemo(
+    () => (container && activeContainerTemplate ? computeDunnageGaps(container.placements, activeContainerTemplate) : []),
+    [container, activeContainerTemplate],
+  );
 
   if (!containerTemplate) {
     return <div className="scene-empty">Chưa có container nào trong thư viện.</div>;
@@ -362,43 +407,55 @@ export function ContainerScene() {
   const far = sceneMaxDim * 10;
   const near = Math.max(1, sceneMaxDim / 1000);
 
+  // Khi phương án tách thành nhiều nhóm hàng, mỗi tab container ghi tên nhóm của nó.
+  const containerGroupLabels: Record<string, string> = {};
+  if (solutionContainers.length > 0 && solution && solution.segregation.sets.length > 1) {
+    for (const set of solution.segregation.sets) {
+      for (const id of set.containerIds) containerGroupLabels[id] = [...set.groupKeys.map(groupLabel), ...(set.temperatureC !== undefined ? [formatTemperature(set.temperatureC)] : [])].join(' + ');
+    }
+  }
+  const metrics = container ? computeResultMetrics(container, activeContainerTemplate, maxPayload) : null;
+  const unfitBoxCount = solutionContainers.length > 0 ? countUnfitBoxes(solution) : 0;
+  const warnings = collectResultWarnings({
+    cgWarnings,
+    container,
+    maxPayloadKg: maxPayload,
+    layoutWarnings: solutionContainers.length > 0 && solution ? solution.layoutWarnings : [],
+    unfitBoxCount,
+  });
+
   return (
-    <div className="scene-container" ref={sceneContainerRef}>
-      {/*
-        Bọc chung 1 hàng riêng cho dải tab container (nếu có) + 1 hàng riêng cho
-        camera-toolbar/dải thông tin container — xếp CHỒNG DỌC (flex-direction: column) bằng
-        flexbox thay vì để các khối tự position:absolute độc lập như trước (từng bị dải tab canh
-        giữa đè lên dải thông tin canh phải khi có nhiều container/màn hình hẹp). `.scene-top-chrome`
-        và `.scene-top-row` đều pointer-events:none (chỉ là khung xếp hàng, không có nền) để phần
-        "khoảng trống" giữa các nút vẫn cho thao tác xoay/kéo camera xuyên qua xuống Canvas bên
-        dưới — từng khối con (CameraToolbar/dải thông tin/ContainerTabsBar) tự bật lại
-        pointer-events:auto (xem App.css). Dải thông tin (DraggableStatsBar) chỉ nằm Ở ĐÂY khi
-        CHƯA từng bị kéo đi nơi khác — một khi đã kéo, nó tự portal ra vị trí tùy chỉnh, độc lập
-        hẳn với hàng này (không còn ảnh hưởng gì đến dải tab container ở trên nữa).
-      */}
-      <div className="scene-top-chrome">
-        {solutionContainers.length > 1 && (
-          <ContainerTabsBar
-            containers={solutionContainers}
-            activeContainerId={container?.id}
-            onSelectContainer={setActiveContainer}
-          />
-        )}
-        <div className="scene-top-row">
-          <CameraToolbar onSelectPreset={setPreset} />
-          <DraggableStatsBar
-            containerTemplate={activeContainerTemplate}
-            container={container}
-            cgWarnings={cgWarnings}
-            canExportPdf={!!solution}
-            isExportingPdf={isExportingPdf}
-            onExportPdf={handleExportPdf}
-            suggestion={isViewingLastContainer ? lastContainerSuggestion : null}
-            suggestedTemplateName={suggestedTemplateName}
-            onApplySuggestion={applyContainerSuggestion}
-          />
-        </div>
-      </div>
+    <div className="result-area">
+      <ResultTopBar
+        containerTemplate={containerTemplate}
+        canExportPdf={!!solution}
+        isExportingPdf={isExportingPdf}
+        onExportPdf={handleExportPdf}
+      />
+      <ResultMetricsRow
+        metrics={metrics}
+        airbagCount={summarizeDunnage(dunnageGaps).airbags}
+        warnings={warnings}
+        suggestion={isViewingLastContainer ? lastContainerSuggestion : null}
+        suggestedTemplateName={suggestedTemplateName}
+        onApplySuggestion={applyContainerSuggestion}
+      />
+      <div className="result-body">
+        <section className="result-viewport">
+          <div className="result-view-strip">
+            {solutionContainers.length > 1 ? (
+              <ContainerTabsBar
+                containers={solutionContainers}
+                activeContainerId={container?.id}
+                onSelectContainer={setActiveContainer}
+                labels={containerGroupLabels}
+              />
+            ) : (
+              <span />
+            )}
+            <CameraToolbar value={preset} onSelectPreset={setPreset} />
+          </div>
+          <div className="scene-container">
       {/*
         Canvas KHÔNG set <color attach="background"> -> nền WebGL trong suốt, để lộ nền CSS
         (linear-gradient xám sáng) của .scene-container phía sau — cho hiệu ứng chuyển màu nhẹ
@@ -456,6 +513,13 @@ export function ContainerScene() {
           width={activeContainerTemplate.innerWidth}
           height={activeContainerTemplate.innerHeight}
         />
+        {activeContainerTemplate.refrigerated && stackHeightLimit(activeContainerTemplate) < activeContainerTemplate.innerHeight && (
+          <HeightLimitLine
+            length={activeContainerTemplate.innerLength}
+            width={activeContainerTemplate.innerWidth}
+            limit={stackHeightLimit(activeContainerTemplate)}
+          />
+        )}
         <TruckDecoration
           length={activeContainerTemplate.innerLength}
           width={activeContainerTemplate.innerWidth}
@@ -471,7 +535,7 @@ export function ContainerScene() {
               <DraggablePlacement
                 key={placement.id}
                 placement={placement}
-                template={templatesById.get(placement.cargoTemplateId)}
+                template={displayTemplatesById.get(placement.cargoTemplateId)}
                 highlighted={placement.id === highlightedPlacementId}
                 faded={isFaded}
                 onSelect={handleSelectPlacement}
@@ -489,7 +553,7 @@ export function ContainerScene() {
             <CargoBox3D
               key={placement.id}
               placement={placement}
-              template={templatesById.get(placement.cargoTemplateId)}
+              template={displayTemplatesById.get(placement.cargoTemplateId)}
               selected={isSelected}
               highlighted={placement.id === highlightedPlacementId}
               faded={isFaded}
@@ -498,6 +562,9 @@ export function ContainerScene() {
             />
           );
         })}
+        {showDunnage && !isSimulating && container && (
+          <DunnageLayer3D gaps={dunnageGaps} />
+        )}
         <CenterOfGravityMarker container={container} containerTemplate={activeContainerTemplate} />
       </Canvas>
       {editNotice && <div className="edit-notice-banner">⚠ {editNotice}</div>}
@@ -505,6 +572,8 @@ export function ContainerScene() {
         items={cargoVisibilityItems}
         hiddenIds={hiddenCargoTemplateIds}
         onToggle={toggleCargoVisibility}
+        colorMode={colorMode}
+        onColorModeChange={setColorMode}
         onShowAll={() => setHiddenCargoTemplateIds(new Set())}
         raised={isSimulating}
       />
@@ -530,6 +599,21 @@ export function ContainerScene() {
           onScrub={(index) => setCurrentStepIndex(clampStepIndex(index, totalSteps))}
         />
       )}
+          </div>
+        </section>
+        <ResultSidePanel
+          solution={solutionContainers.length > 0 ? solution : null}
+          solutionContainers={solutionContainers}
+          containerTemplate={activeContainerTemplate}
+          container={container}
+          metrics={metrics}
+          cgWarnings={cgWarnings}
+          dunnageGaps={dunnageGaps}
+          unfitBoxCount={unfitBoxCount}
+          maxPayload={maxPayload}
+          onMaxPayloadChange={(kg) => setPayloadOverrides((prev) => ({ ...prev, [activeContainerTemplate.id]: kg }))}
+        />
+      </div>
     </div>
   );
 }

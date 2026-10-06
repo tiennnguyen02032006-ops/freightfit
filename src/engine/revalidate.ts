@@ -6,7 +6,9 @@ import type {
   Violation,
 } from '../domain/types';
 import { hasCollision } from './constraints/collision';
+import { resolveBlockTemplate, withPalletBlockTemplates } from './palletizing/palletBlock';
 import { fitsInsideContainer } from './packing/extremePoints';
+import { packableContainer } from './reefer';
 import { respectsLoadOnTop } from './constraints/payload';
 import { respectsStacking } from './constraints/stacking';
 import { centerOfGravityOK, computeSupportRatio, findSupportingPlacements, meetsMinSupportRatio } from './constraints/support';
@@ -86,16 +88,14 @@ export interface RevalidateOutcome extends RevalidationResult {
  * xem generateSolutions.ts/sortCargo.ts: mọi hàng hóa nay xếp chung 1 lô duy nhất.)
  */
 export function revalidatePlacement(params: RevalidateParams): RevalidateOutcome {
-  const {
-    placementId,
-    candidate,
-    template,
-    placements,
-    containerTemplate,
-    templatesById,
-    otherMovingPlacementIds = [],
-  } = params;
+  const { placementId, candidate, placements, containerTemplate, otherMovingPlacementIds = [] } = params;
   const violations: Violation[] = [];
+
+  // Pallet là khối cứng: kiện đang chỉnh (nếu là pallet) và các pallet bên dưới được kiểm theo
+  // template của CẢ KHỐI (kích thước/khối lượng/số tầng pallet), không theo thùng bên trong.
+  const moving = placements.find((p) => p.id === placementId);
+  const template = moving ? resolveBlockTemplate(params.template, moving) : params.template;
+  const templatesById = withPalletBlockTemplates(params.templatesById, placements);
 
   const isAllowedOrientation = template.allowedOrientations.some(
     ([l, w, h]) => l === candidate.length && w === candidate.width && h === candidate.height,
@@ -108,7 +108,7 @@ export function revalidatePlacement(params: RevalidateParams): RevalidateOutcome
     });
   }
 
-  if (!fitsInsideContainer(candidate, containerTemplate)) {
+  if (!fitsInsideContainer(candidate, packableContainer(containerTemplate))) {
     violations.push({
       type: 'OUT_OF_BOUNDS',
       placementId,

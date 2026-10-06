@@ -1,3 +1,4 @@
+import { resolveBlockTemplate } from '../../engine/palletizing/palletBlock';
 import { useEffect, useRef, useState } from 'react';
 import { useThree, type ThreeEvent } from '@react-three/fiber';
 import { Plane, Raycaster, Vector2, Vector3, type Group } from 'three';
@@ -365,7 +366,7 @@ export function DraggablePlacement({
     window.addEventListener('pointerup', handleWindowPointerUp);
   };
 
-  const rotationAxes = template ? getAvailableRotationAxes(placement, template.allowedOrientations) : undefined;
+  const rotationAxes = template ? getAvailableRotationAxes(placement, resolveBlockTemplate(template, placement).allowedOrientations) : undefined;
 
   // Bọc onRotateAxis: khi 1 nấc xoay bị TỪ CHỐI (editSlice.ts rotatePlacement trả về false — vượt
   // kích thước container, vi phạm collision/stacking/support/CG...), phát thêm phản hồi hình ảnh

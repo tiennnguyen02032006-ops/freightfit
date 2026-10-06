@@ -3,7 +3,7 @@ import { useAppStore } from '../../store';
 import type { ContainerTemplate } from '../../domain/types';
 import { formatMmAsCm, formatNumber } from '../shared/formatUnits';
 
-const emptyCustomForm = { name: '', innerLength: '', innerWidth: '', innerHeight: '', maxPayload: '' };
+const emptyCustomForm = { name: '', innerLength: '', innerWidth: '', innerHeight: '', maxPayload: '', refrigerated: false, maxStackHeight: '' };
 
 interface ContainerPickerProps {
   label: string;
@@ -69,6 +69,13 @@ export function ContainerPicker({ label }: ContainerPickerProps) {
       innerWidth,
       innerHeight,
       maxPayload,
+      ...(customForm.refrigerated
+        ? {
+            refrigerated: true,
+            // Vạch giới hạn chiều cao xếp (mm); trống = không có vạch riêng, dùng chiều cao lòng xe.
+            ...(Number(customForm.maxStackHeight) > 0 ? { maxStackHeight: Number(customForm.maxStackHeight) } : {}),
+          }
+        : {}),
       isCustom: true,
     };
     addCustomContainer(template);
@@ -92,7 +99,7 @@ export function ContainerPicker({ label }: ContainerPickerProps) {
         aria-expanded={open}
         title={label}
       >
-        <span className="scene-stats-bar-title">{label}</span>
+        <span className="container-picker-title">{label}</span>
         <span className="container-picker-caret" aria-hidden="true">▾</span>
       </button>
 
@@ -143,6 +150,21 @@ export function ContainerPicker({ label }: ContainerPickerProps) {
                 value={customForm.maxPayload}
                 onChange={(e) => setCustomForm({ ...customForm, maxPayload: e.target.value })}
               />
+              <label>
+                <input
+                  type="checkbox"
+                  checked={customForm.refrigerated}
+                  onChange={(e) => setCustomForm({ ...customForm, refrigerated: e.target.checked })}
+                />{' '}
+                Container lạnh (reefer)
+              </label>
+              {customForm.refrigerated && (
+                <input
+                  placeholder="Vạch giới hạn chiều cao xếp (mm)"
+                  value={customForm.maxStackHeight}
+                  onChange={(e) => setCustomForm({ ...customForm, maxStackHeight: e.target.value })}
+                />
+              )}
               <div className="form-actions">
                 <button type="button" onClick={handleCancelCustom}>
                   Hủy

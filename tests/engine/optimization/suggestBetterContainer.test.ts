@@ -18,7 +18,6 @@ const bigCurrentTemplate: ContainerTemplate = {
   innerWidth: 2400,
   innerHeight: 2400,
   maxPayload: 20000,
-  costPerTrip: 1_000_000,
   isCustom: false,
 };
 
@@ -32,7 +31,6 @@ const cheapSmallTruck: ContainerTemplate = {
   innerWidth: 1000,
   innerHeight: 1000,
   maxPayload: 800,
-  costPerTrip: 200_000,
   isCustom: false,
 };
 
@@ -44,7 +42,6 @@ const pricierMediumTruck: ContainerTemplate = {
   innerWidth: 2000,
   innerHeight: 2000,
   maxPayload: 8000,
-  costPerTrip: 500_000,
   isCustom: false,
 };
 
@@ -92,7 +89,7 @@ describe('computeContainerFillRatio', () => {
 });
 
 describe('suggestBetterContainer', () => {
-  it('bộ hàng nhỏ hơn hẳn thể tích container hiện dùng -> gợi ý đúng loại xe nhỏ hơn, rẻ hơn', () => {
+  it('bộ hàng nhỏ hơn hẳn thể tích container hiện dùng -> gợi ý đúng loại xe có lòng nhỏ nhất', () => {
     const suggestion = suggestBetterContainer({
       lastContainer: makeLastContainer(),
       currentTemplate: bigCurrentTemplate,
@@ -101,11 +98,9 @@ describe('suggestBetterContainer', () => {
     });
 
     expect(suggestion).not.toBeNull();
-    // cheapSmallTruck rẻ hơn pricierMediumTruck (cả 2 đều xếp vừa hết) -> phải chọn cheapSmallTruck,
-    // không chỉ đơn thuần chọn cái nhỏ nhất hay cái đầu tiên trong danh sách.
+    // cheapSmallTruck có thể tích lòng nhỏ hơn pricierMediumTruck (cả 2 đều xếp vừa hết) -> phải chọn nó.
     expect(suggestion?.suggestedTemplateId).toBe(cheapSmallTruck.id);
     expect(suggestion?.fillRatioBefore).toBeLessThan(0.35);
-    expect(suggestion?.estimatedSavings).toBe(bigCurrentTemplate.costPerTrip! - cheapSmallTruck.costPerTrip!);
   });
 
   it('container cuối đã lấp đầy đủ (>= ngưỡng) -> không gợi ý gì', () => {
@@ -156,31 +151,25 @@ describe('suggestBetterContainer', () => {
     expect(suggestion).toBeNull();
   });
 
-  it('ứng viên THIẾU costPerTrip vẫn được chọn nếu nhỏ hơn hẳn ứng viên có costPerTrip (bug đã sửa: thiếu giá không còn bị coi là "chi phí vô cực")', () => {
-    // Mô phỏng chính xác bug đã báo cáo: 1 container tiêu chuẩn khác (nhỏ hơn currentTemplate,
-    // có costPerTrip) so với 1 xe tải nhỏ hơn NHIỀU (chưa có costPerTrip, vd vừa thêm vào thư viện
-    // nhưng chưa có số liệu giá thị trường) — trước đây xe tải luôn thua vì bị coi là "vô cực",
-    // giờ phải thắng vì thể tích nhỏ hơn hẳn.
+  it('nhiều ứng viên đều xếp vừa hết -> chọn ứng viên có thể tích lòng nhỏ hơn, dù là xe tải hay container tiêu chuẩn', () => {
     const otherStandardContainer: ContainerTemplate = {
-      id: 'other-standard-with-cost',
-      name: 'Container tiêu chuẩn khác (test, có giá)',
+      id: 'other-standard',
+      name: 'Container tiêu chuẩn khác (test)',
       standardType: '20FT_REEFER',
       innerLength: 3000,
       innerWidth: 2000,
       innerHeight: 2000,
       maxPayload: 15000,
-      costPerTrip: 1_300_000, // có giá, nhưng ĐẮT hơn hẳn currentTemplate (1.000.000)
       isCustom: false,
     };
-    const truckWithoutCost: ContainerTemplate = {
-      id: 'truck-without-cost',
-      name: 'Xe tải nhỏ (test, chưa có giá)',
+    const smallTruck: ContainerTemplate = {
+      id: 'small-truck',
+      name: 'Xe tải nhỏ (test)',
       standardType: 'CUSTOM_TRUCK',
       innerLength: 1500,
       innerWidth: 1000,
       innerHeight: 1000,
       maxPayload: 800,
-      // Không set costPerTrip — cố tình để undefined, đúng tình huống báo cáo bug.
       isCustom: false,
     };
 
@@ -188,13 +177,10 @@ describe('suggestBetterContainer', () => {
       lastContainer: makeLastContainer(),
       currentTemplate: bigCurrentTemplate,
       cargoTemplatesById,
-      containerLibrary: [bigCurrentTemplate, otherStandardContainer, truckWithoutCost],
+      containerLibrary: [bigCurrentTemplate, otherStandardContainer, smallTruck],
     });
 
-    expect(suggestion?.suggestedTemplateId).toBe(truckWithoutCost.id);
-    // Không đủ dữ liệu costPerTrip của loại được chọn -> không tính được savings, phải là null chứ
-    // không phải 0 hay 1 con số bịa ra.
-    expect(suggestion?.estimatedSavings).toBeNull();
+    expect(suggestion?.suggestedTemplateId).toBe(smallTruck.id);
   });
 
   it('lô hàng rất nhỏ (vài trăm kg) trong solution thật dùng 20ft Standard -> gợi ý đúng xe tải nhỏ NHẤT (Porter H150), không còn gợi ý sang container tiêu chuẩn khác cùng cỡ (vd 20ft Reefer)', () => {

@@ -9,11 +9,12 @@ import {
 import './App.css';
 import './components/panels/BlackBoxPanel.css';
 import { AddCargoPanel } from './components/panels/AddCargoPanel';
+import { PalletPlanPanel } from './components/panels/PalletPlanPanel';
+import { ToleranceSettingsPanel } from './components/panels/ToleranceSettingsPanel';
+import { SegregationRulesPanel } from './components/panels/SegregationRulesPanel';
 import { BlackBoxPanel } from './components/panels/BlackBoxPanel';
-import { TransportCostPanel } from './components/panels/TransportCostPanel';
 import { ImportPanel } from './components/panels/ImportPanel';
 import { SavedTripsPanel } from './components/panels/SavedTripsPanel';
-import { SolutionSummaryBar } from './components/panels/SolutionSummaryBar';
 import type { TripPlanRecord } from './domain/types';
 import { ContainerScene } from './components/scene/ContainerScene';
 
@@ -122,8 +123,6 @@ function App() {
         </>
       ) : (
         <>
-      <SolutionSummaryBar />
-
       <div
         className={`app-layout ${leftOpen ? '' : 'no-left'}`}
         style={
@@ -137,7 +136,9 @@ function App() {
       >
         <aside className="app-column app-column-left" id="app-column-left" hidden={!leftOpen}>
           <AddCargoPanel />
-          <TransportCostPanel />
+          <ToleranceSettingsPanel />
+          <SegregationRulesPanel />
+          <PalletPlanPanel />
           <ImportPanel />
           <SavedTripsPanel
             onFindIncidentCause={(trip) => {

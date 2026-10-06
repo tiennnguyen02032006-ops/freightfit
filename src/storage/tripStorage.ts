@@ -40,7 +40,8 @@ function isTripPlanStop(v: unknown): v is TripPlanStop {
     typeof s.stopId === 'string' &&
     typeof s.order === 'number' &&
     typeof s.name === 'string' &&
-    typeof s.etaMinutes === 'number'
+    (s.etaMinutes === undefined || typeof s.etaMinutes === 'number') &&
+    (s.etaClock === undefined || typeof s.etaClock === 'string')
   );
 }
 
@@ -67,6 +68,7 @@ function isTripPlanRecord(v: unknown): v is TripPlanRecord {
     typeof p.tripId === 'string' &&
     typeof p.name === 'string' &&
     typeof p.createdAt === 'number' &&
+    (p.departureTime === undefined || typeof p.departureTime === 'string') &&
     Array.isArray(p.stops) &&
     p.stops.every(isTripPlanStop) &&
     Array.isArray(p.cargo) &&
@@ -87,6 +89,7 @@ function isTripRouteProposal(v: unknown): v is TripRouteProposal {
     typeof r.estimatedDistanceKm === 'number' &&
     typeof r.shortestPossibleDistanceKm === 'number' &&
     typeof r.fillRatioPercent === 'number' &&
+    (r.unknownLegCount === undefined || typeof r.unknownLegCount === 'number') &&
     typeof r.blockedCount === 'number' &&
     typeof r.usedHeuristic === 'boolean' &&
     typeof r.generatedAt === 'number'

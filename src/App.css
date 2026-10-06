@@ -17,16 +17,6 @@
   flex-shrink: 0;
 }
 
-/* Dòng tổng kết "Cần dùng N container..." — chỉ hiện khi đã có solution (xem
-   SolutionSummaryBar.tsx), nằm ngay dưới header, phía trên toàn bộ layout 2 cột. */
-.solution-summary-bar {
-  padding: 8px 20px;
-  border-bottom: 1px solid var(--border);
-  background: var(--accent-bg);
-  font-size: 13px;
-  flex-shrink: 0;
-}
-
 /* Dòng nhắc khi mở tab Black Box từ Bước 3 của 1 chuyến (App.tsx incidentTrip) — chỉ mang tính
    tham khảo, KHÔNG nạp dữ liệu chuyến vào Black Box (xem ghi chú ở App.tsx). */
 .incident-trip-banner {
@@ -36,11 +26,6 @@
   background: var(--accent-bg);
   border: 1px solid var(--accent-border);
   font-size: 13px;
-}
-
-.solution-summary-bar-warning {
-  color: #d9822b;
-  font-weight: 600;
 }
 
 .app-logo {
@@ -279,6 +264,35 @@ select:focus-visible {
   opacity: 1;
   color: var(--text-h);
   text-align: center;
+}
+
+.pallet-toggle input {
+  width: auto;
+}
+
+.cargo-list-pallet-badge {
+  font-weight: 400;
+  font-size: 11.5px;
+  opacity: 0.8;
+}
+
+.pallet-plan-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.pallet-plan-meta {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.pallet-plan-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
 }
 
 .shape-toggle-row {
@@ -560,6 +574,27 @@ select:focus-visible {
   padding: 6px 8px;
 }
 
+.trip-distance-table-wrap {
+  overflow-x: auto;
+}
+
+.trip-distance-table {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.trip-distance-table th,
+.trip-distance-table td {
+  padding: 2px 4px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.trip-distance-table tbody th {
+  text-align: left;
+  font-weight: 600;
+}
+
 .trip-route-section {
   margin-top: 12px;
   padding-top: 10px;
@@ -719,49 +754,6 @@ button.primary:hover:not(:disabled) {
   opacity: 0.65;
 }
 
-/* ---------- Transport cost panel ---------- */
-
-.transport-cost-summary {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.08));
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.transport-cost-summary-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12.5px;
-}
-
-/* Khối con tách riêng chi phí "Container cuối" (khi khác template với các container đầu) — thụt
-   lề nhẹ + viền trên mờ để phân biệt trực quan với các dòng chi phí gộp chung phía trên, xem
-   TransportCostPanel.tsx. */
-.transport-cost-summary-group {
-  margin-top: 6px;
-  padding-top: 6px;
-  padding-left: 8px;
-  border-top: 1px dashed var(--border, rgba(255, 255, 255, 0.08));
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.transport-cost-summary-subheading {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-h);
-  opacity: 0.85;
-}
-
-.transport-cost-summary-total {
-  font-size: 13.5px;
-  font-weight: 700;
-  color: var(--text-h);
-}
-
 /* ---------- Import panel (collapsible) ---------- */
 
 .import-panel {
@@ -887,309 +879,39 @@ button.primary:hover:not(:disabled) {
   opacity: 0.8;
 }
 
-/* ---------- Container picker (dropdown trong SceneStatsBar) ---------- */
-
-.custom-container-form {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 10px 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-}
-
-.unfit-list li {
-  display: flex;
-  justify-content: space-between;
-  padding: 4px 0;
-}
-
-/* ---------- Scene stats bar (góc trên phải khung 3D) ---------- */
-
-.scene-stats-bar {
-  /* position/top/right KHÔNG khai báo ở đây nữa — nằm trong hàng flex .scene-top-row (xem
-     ContainerScene.tsx/.scene-top-chrome bên dưới), tự căn phải qua justify-content thay vì tự
-     định vị tuyệt đối, để không còn nguy cơ chồng lên dải tab container ở bất kỳ độ rộng nào. */
-  pointer-events: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-width: min(92vw, 620px);
-  background: color-mix(in srgb, #14161a 82%, transparent);
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-  backdrop-filter: blur(6px);
-  color: #f2f3f5;
-}
-
-.scene-stats-bar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  /* nowrap CỐ Ý (khác các hàng flex khác trong app cho phép wrap) — tên container/xe dài (vd
-     "Xe tải Veam VT750 TK (thùng kín) (605 × 205 × 187 cm)") trước đây từng đẩy phần nút xuống
-     dòng riêng, khiến dải trông như 2 thanh nền tách biệt (mỗi dòng lại nằm trong .scene-stats-bar
-     background/border-radius chung nhưng bị flex-wrap chia đôi theo chiều dọc). Bắt buộc 1 dòng
-     duy nhất, nhường .container-picker (min-width:0 + ellipsis, xem dưới) tự co lại và cắt ngắn
-     tên bằng "..." thay vì đẩy nút xuống dòng khác. */
-  flex-wrap: nowrap;
-  gap: 8px 10px;
-}
-
-.scene-stats-bar-header-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  /* Không bao giờ co/cắt các nút hành động (Tạo phương án/Xuất PDF/thu gọn) — chỗ trống thiếu hụt
-     khi tên dài phải lấy từ .container-picker co lại, không phải từ đây. */
-  flex-shrink: 0;
-  gap: 8px;
-}
-
-/* Cụm 2 nút "điều khiển thanh công cụ" ở đầu dải — tay cầm kéo (⠿) + nút thu gọn/mở lại (▾/▸)
-   đứng sát nhau (gap nhỏ hơn hẳn gap chung của .scene-stats-bar-header) vì cùng là hành động điều
-   khiển CHÍNH DẢI NÀY, khác với các nút nghiệp vụ (Tạo phương án/Xuất PDF) nằm riêng ở
-   .scene-stats-bar-header-actions. */
-.scene-stats-bar-toolbar-controls {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 2px;
-}
-
-/* Tay cầm kéo (icon 6 chấm) ở góc trái dải thông tin container — kéo vào đây để di chuyển cả dải
-   đến vị trí bất kỳ trong khung 3D (xem DraggableStatsBar.tsx). touch-action:none để trình duyệt
-   không tự cuộn trang khi kéo bằng ngón tay trên thiết bị cảm ứng. */
-.scene-stats-bar-drag-handle {
-  flex-shrink: 0;
-  cursor: grab;
-  padding: 2px 4px;
-  font-size: 13px;
-  line-height: 1;
-  opacity: 0.6;
-  touch-action: none;
-}
-
-.scene-stats-bar-drag-handle:hover {
-  opacity: 1;
-}
-
-.scene-stats-bar-drag-handle:active {
-  cursor: grabbing;
-}
-
-.scene-stats-bar-title {
-  font-size: 12.5px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  /* min-width: 0 BẮT BUỘC ở chính flex item này (không chỉ ở .container-picker/
-     .container-picker-trigger bao ngoài) — mặc định flex item có min-width: auto, tức KHÔNG BAO
-     GIỜ tự co nhỏ hơn nội dung của nó (kể cả khi overflow: hidden), nên white-space: nowrap +
-     text-overflow: ellipsis ở trên sẽ vô tác dụng nếu thiếu dòng này khi tên container/xe dài hơn
-     chỗ trống thật sự còn lại. */
-  min-width: 0;
-}
-
-.scene-stats-bar-generate-btn {
-  flex-shrink: 0;
-  padding: 4px 9px;
-  font-size: 11.5px;
-  font-weight: 600;
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.scene-stats-bar-generate-btn:hover:not(:disabled) {
-  filter: brightness(1.05);
-}
-
-.scene-stats-bar-export-btn {
-  flex-shrink: 0;
-  padding: 4px 9px;
-  font-size: 11.5px;
-  font-weight: 600;
-  background: color-mix(in srgb, #f2f3f5 12%, transparent);
-  color: #f2f3f5;
-}
-
-.scene-stats-bar-export-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, #f2f3f5 22%, transparent);
-}
-
-.scene-stats-bar-export-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Nút thu gọn/mở lại toàn bộ dải thông tin container (mũi tên ▾/▸) — nằm trong
-   .scene-stats-bar-toolbar-controls cạnh tay cầm kéo, LUÔN hiện (kể cả khi thu gọn, khi 2 nút Tạo
-   phương án/Xuất PDF đã ẩn đi) để không bao giờ mất chỗ mở lại. */
-.scene-stats-bar-collapse-btn {
-  flex-shrink: 0;
-  padding: 4px 7px;
-  font-size: 11px;
-  line-height: 1;
-  background: color-mix(in srgb, #f2f3f5 12%, transparent);
-  color: #f2f3f5;
-}
-
-.scene-stats-bar-collapse-btn:hover {
-  background: color-mix(in srgb, #f2f3f5 22%, transparent);
-}
-
-.scene-stats-bar.is-collapsed {
-  gap: 0;
-  padding: 4px 6px;
-}
-
-.scene-stats-bar-note {
-  font-size: 11px;
-  font-style: italic;
-  opacity: 0.75;
-}
-
-.scene-stats-bar-cg-warning {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: #ffa940;
-}
-
-.scene-stats-bar-suggestion {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  background: color-mix(in srgb, #4da6ff 18%, transparent);
-  border: 1px solid color-mix(in srgb, #4da6ff 40%, transparent);
-}
-
-.scene-stats-bar-suggestion-text {
-  flex: 1;
-  min-width: 180px;
-  font-size: 11.5px;
-  line-height: 1.4;
-}
-
-.scene-stats-bar-suggestion-apply-btn {
-  flex-shrink: 0;
-  padding: 4px 10px;
-  font-size: 11.5px;
-  font-weight: 600;
-  background: #4da6ff;
-  border-color: #4da6ff;
-  color: #06131f;
-}
-
-.scene-stats-bar-suggestion-apply-btn:hover:not(:disabled) {
-  filter: brightness(1.05);
-}
-
-.scene-stats-bar-metrics {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  padding-top: 6px;
-  border-top: 1px solid color-mix(in srgb, #f2f3f5 18%, transparent);
-  white-space: nowrap;
-}
-
-.scene-stats-bar-metric {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.scene-stats-bar-metric-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10.5px;
-  opacity: 0.75;
-}
-
-.scene-stats-bar-icon {
-  font-size: 12px;
-  line-height: 1;
-}
-
-.scene-stats-bar-value {
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-/* Bấm vào số tải trọng tối đa (dòng "Trọng lượng") để sửa tạm thời — xem SceneStatsBar.tsx. */
-.scene-stats-bar-payload-edit {
-  padding: 0 2px;
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
-  font-weight: 600;
-  text-decoration: underline dotted;
-  text-underline-offset: 2px;
-}
-
-.scene-stats-bar-payload-edit:hover {
-  color: #fff;
-}
-
-.scene-stats-bar-payload-input {
-  display: inline-block;
-  width: 70px;
-  padding: 1px 4px;
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-/* ---------- Container picker (dropdown chọn container, trong dòng tên ở SceneStatsBar) ---------- */
+/* ---------- Container picker (dropdown chọn container, trong thanh trên cùng ResultTopBar) ---------- */
 
 .container-picker {
   position: relative;
-  /* flex: 1 1 auto + min-width: 0 = phần tử DUY NHẤT trong .scene-stats-bar-header được phép co
-     lại khi thiếu chỗ (thay vì bị đẩy xuống dòng khác, xem giải thích flex-wrap: nowrap ở trên) —
-     min-width: 0 ghi đè min-width mặc định "auto" của flex item (vốn không bao giờ co nhỏ hơn nội
-     dung bên trong), điều kiện bắt buộc để white-space: nowrap + text-overflow: ellipsis của
-     .scene-stats-bar-title (bên trong .container-picker-trigger) thực sự phát huy tác dụng. */
-  flex: 1 1 auto;
   min-width: 0;
 }
 
 .container-picker-trigger {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
-  /* width: 100% BẮT BUỘC — <button> (dù đã display:flex) vẫn giữ kiểu tự co theo nội dung
-     (shrink-to-fit) như các form control khác thay vì tự lấp đầy chiều rộng phần tử cha
-     (.container-picker) như 1 <div> thường, nên nếu không ép width:100% ở đây, nút này (và
-     .scene-stats-bar-title bên trong) sẽ TRÀN RỘNG hơn hẳn .container-picker đã bị flexbox co lại
-     — khiến ellipsis không bao giờ kích hoạt dù .container-picker/.scene-stats-bar-title đã có
-     min-width: 0 đầy đủ. */
   width: 100%;
-  padding: 2px 4px;
-  background: none;
-  border: none;
-  color: inherit;
-  border-radius: 6px;
+  padding: 7px 10px;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-h);
+  border-radius: 8px;
 }
 
 .container-picker-trigger:hover {
-  background: color-mix(in srgb, #f2f3f5 12%, transparent);
+  border-color: var(--accent-border);
 }
 
-.container-picker-trigger .scene-stats-bar-title {
-  color: inherit;
+.container-picker-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  /* cho phép xuống dòng thay vì cắt chữ khi tên container/xe dài hoặc cửa sổ hẹp */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .container-picker-caret {
@@ -1361,9 +1083,7 @@ button.primary:hover:not(:disabled) {
   font-size: 13px;
   color: var(--text-h);
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .cargo-detail-popup-hint {
@@ -1397,8 +1117,8 @@ button.primary:hover:not(:disabled) {
 
 .scene-container {
   position: relative;
-  height: 100%;
-  min-height: 300px;
+  flex: 1 1 auto;
+  min-height: 320px;
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
@@ -1417,85 +1137,28 @@ button.primary:hover:not(:disabled) {
   font-size: 14px;
 }
 
-/* Khung xếp hàng chung cho dải tab container (nếu có, hàng trên) + hàng camera-toolbar/
-   scene-stats-bar (hàng dưới) — xem comment trong ContainerScene.tsx. pointer-events:none ở cả
-   khung ngoài lẫn hàng trong để "khoảng trống" giữa các nút vẫn xuyên thao tác chuột xuống Canvas
-   bên dưới; từng nút/khối con tự bật lại pointer-events:auto. */
-.scene-top-chrome {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  right: 10px;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  pointer-events: none;
-}
-
-.scene-top-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  /* Cho phép scene-stats-bar tự XUỐNG DÒNG dưới camera-toolbar (thay vì bị ép chồng lên/cắt mất)
-     nếu màn hình quá hẹp để cả 2 nằm vừa 1 hàng — vẫn không bao giờ chồng lên dải tab container ở
-     trên vì đó luôn là 1 hàng flex riêng, tách biệt hoàn toàn. */
-  flex-wrap: wrap;
-  pointer-events: none;
-}
-
-.camera-toolbar {
-  pointer-events: auto;
-  display: flex;
-  gap: 4px;
-  background: color-mix(in srgb, var(--bg) 80%, transparent);
-  padding: 4px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  backdrop-filter: blur(4px);
-}
-
-.camera-toolbar button {
-  font-size: 12px;
-  padding: 5px 10px;
-}
-
-.camera-toolbar button.is-active {
-  background: var(--accent-bg);
-  border-color: var(--accent-border);
+.pallet-partial-tag {
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #d946ef;
+  color: #fff;
+  font-size: 11px;
   font-weight: 600;
-}
-
-/* Dải tab "Container 1/3"... — LUÔN là 1 hàng RIÊNG, nằm TRÊN hàng camera-toolbar/scene-stats-bar
-   (xem .scene-top-chrome/.scene-top-row ở trên), không còn tự canh giữa/position:absolute độc lập
-   như trước (từng đè lên scene-stats-bar canh phải khi có nhiều container). Chỉ render khi có > 1
-   container (xem ContainerScene.tsx). Được flex-direction:column của .scene-top-chrome tự CĂNG
-   HẾT CHIỀU RỘNG (align-items mặc định là stretch) — overflow-x:auto để CUỘN NGANG thay vì tràn ra
-   ngoài khi có nhiều container (vd trên 6), các nút bên trong flex-shrink:0 để không bị bóp méo. */
-.container-tabs-bar {
-  pointer-events: auto;
-  display: flex;
-  gap: 4px;
-  overflow-x: auto;
-  background: color-mix(in srgb, var(--bg) 80%, transparent);
-  padding: 4px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  backdrop-filter: blur(4px);
-}
-
-.container-tabs-bar button {
-  flex-shrink: 0;
-  font-size: 12px;
-  padding: 5px 10px;
   white-space: nowrap;
+  pointer-events: none;
 }
 
-.container-tabs-bar button.is-active {
-  background: var(--accent-bg);
-  border-color: var(--accent-border);
-  font-weight: 600;
+.dunnage-tooltip {
+  min-width: 180px;
+  max-width: 260px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: rgba(20, 24, 31, 0.92);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: normal;
+  pointer-events: none;
 }
 
 /* Bảng hiện/ẩn từng loại hàng (CargoVisibilityPanel.tsx) — góc dưới-TRÁI khung 3D (góc dưới-phải
@@ -1505,10 +1168,11 @@ button.primary:hover:not(:disabled) {
   bottom: 10px;
   left: 10px;
   z-index: 2;
-  width: fit-content;
-  min-width: 130px;
-  max-width: min(200px, calc(100% - 20px));
+  width: max-content; /* tự giãn theo nội dung, trong khoảng min-width .. max-width */
+  min-width: min(190px, calc(100% - 20px));
+  max-width: min(300px, calc(100% - 20px));
   max-height: 40%;
+  overflow: hidden; /* chỉ danh sách bên dưới cuộn, bảng không tràn khỏi khung */
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1528,23 +1192,21 @@ button.primary:hover:not(:disabled) {
 .cargo-visibility-panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  flex-wrap: wrap; /* nút không đủ chỗ thì tự xuống hàng thay vì tràn ra ngoài bảng */
+  gap: 4px 6px;
   padding: 0 2px;
   font-size: 11px;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
 .cargo-visibility-panel-title {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 auto;
+  min-width: max-content; /* tiêu đề giữ nguyên 1 dòng, không bị bẻ từng chữ */
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-/* Cùng kích thước/hình dạng với .scene-stats-bar-collapse-btn nhưng dùng màu theo theme (panel này
-   nền theo --bg, không phải nền tối cố định như dải thông tin container). */
+/* Nút thu gọn nhỏ của panel (màu theo theme, nền theo --bg). */
 .cargo-visibility-panel-collapse-btn {
   flex-shrink: 0;
   padding: 2px 4px;
@@ -1553,14 +1215,18 @@ button.primary:hover:not(:disabled) {
 }
 
 .cargo-visibility-panel-show-all {
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  max-width: 100%;
   padding: 1px 5px;
   font-size: 10px;
   white-space: nowrap;
 }
 
 .cargo-visibility-panel-list {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1584,9 +1250,7 @@ button.primary:hover:not(:disabled) {
 .cargo-visibility-panel-name {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .cargo-visibility-panel-count {
@@ -1601,9 +1265,9 @@ button.primary:hover:not(:disabled) {
   transform: translateX(-50%);
   z-index: 2;
   max-width: min(90vw, 480px);
-  background: color-mix(in srgb, #4a2a0a 88%, transparent);
-  color: #ffcc80;
-  border: 1px solid #d9822b;
+  background: color-mix(in srgb, #14161a 88%, transparent);
+  color: #fff;
+  border: 1px solid var(--accent);
   border-radius: 8px;
   padding: 7px 14px;
   font-size: 12.5px;
@@ -1651,9 +1315,7 @@ button.primary:hover:not(:disabled) {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-h);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 1024px) {
@@ -1667,4 +1329,747 @@ button.primary:hover:not(:disabled) {
   .scene-container {
     min-height: 400px;
   }
+}
+
+/* ================= Khu vực kết quả xếp hàng (thanh trên cùng, hàng số liệu, khung 3D, bảng bên phải) =================
+   Chỉ dùng MỘT màu nhấn (var(--accent)) + màu trung tính của theme; chữ luôn được phép xuống dòng (không cắt/tràn).
+   Bố cục co theo CHIỀU RỘNG CỘT GIỮA (container query), không phụ thuộc cửa sổ trình duyệt. */
+
+.result-area {
+  container: result / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.result-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.result-topbar .container-picker {
+  flex: 1 1 260px;
+}
+
+.result-topbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.result-btn {
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: normal;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+}
+
+.result-btn:hover:not(:disabled) {
+  border-color: var(--accent-border);
+}
+
+.result-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.result-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.result-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+  border-color: var(--accent);
+}
+
+.result-btn-small {
+  margin-top: 4px;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.result-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.result-tiles {
+  flex: 1 1 360px;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+
+.result-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.result-tile-value {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text-h);
+  overflow-wrap: anywhere;
+}
+
+.result-tile-label {
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.result-progress {
+  height: 5px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: var(--accent-bg);
+  overflow: hidden;
+}
+
+.result-progress-fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+.result-warnings {
+  position: relative;
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.result-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.result-badge.has-items {
+  border-color: var(--accent);
+  color: var(--text-h);
+}
+
+.result-badge-count {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  text-align: center;
+  background: var(--border);
+  color: var(--text-h);
+}
+
+.result-badge.has-items .result-badge-count {
+  background: var(--accent);
+  color: #fff;
+}
+
+.result-warnings-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  box-sizing: border-box;
+  width: min(380px, calc(100vw - 32px));
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  color: var(--text-h);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+}
+
+.result-warnings-popover ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0 0 0 16px;
+}
+
+.result-warnings-popover li {
+  overflow-wrap: anywhere;
+}
+
+.result-muted {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.result-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.result-viewport {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.result-view-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.result-viewbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.result-segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.result-segmented button {
+  padding: 5px 12px;
+  font-size: 12.5px;
+  border: none;
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.result-segmented button + button {
+  border-left: 1px solid var(--border);
+}
+
+.result-segmented button.is-active {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.result-chip {
+  padding: 5px 12px;
+  font-size: 12.5px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.result-chip.is-active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.container-tabs-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.container-tabs-bar button {
+  padding: 5px 10px;
+  font-size: 12.5px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.container-tabs-bar button.is-active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.result-side {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-width: 40cqw;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.result-side.is-collapsed {
+  width: 34px;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 6px;
+}
+
+.result-side-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.result-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  min-width: 0;
+}
+
+.result-tab {
+  padding: 5px 8px;
+  font-size: 12.5px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: none;
+  color: var(--text);
+}
+
+.result-tab.is-active {
+  border-bottom-color: var(--accent);
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.result-side-toggle {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  line-height: 1;
+  font-size: 15px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.result-side-toggle:hover {
+  border-color: var(--accent-border);
+}
+
+.result-side-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+  font-size: 12.5px;
+  color: var(--text-h);
+}
+
+.result-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.result-dl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.result-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 36%) minmax(0, 1fr);
+  gap: 4px 8px;
+}
+
+.result-row dt {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.result-row dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 16px;
+}
+
+.result-list li {
+  overflow-wrap: anywhere;
+}
+
+.result-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.result-link {
+  padding: 0 2px;
+  border: none;
+  border-bottom: 1px dashed var(--accent);
+  border-radius: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+}
+
+.result-payload-input {
+  width: 80px;
+  padding: 2px 4px;
+  font: inherit;
+}
+
+/* Cột giữa hẹp: bảng bên phải xuống dưới khung 3D (không còn nằm cạnh), mọi hàng tự xuống dòng */
+@container result (max-width: 860px) {
+  .result-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(340px, 1fr) auto;
+  }
+
+  .result-side,
+  .result-side.is-collapsed {
+    width: auto;
+    max-width: none;
+    max-height: 60vh;
+    padding-top: 0;
+    align-items: stretch;
+  }
+
+  .result-side.is-collapsed {
+    flex-direction: row;
+    justify-content: flex-end;
+    padding: 6px;
+  }
+}
+
+/* ---------- Khối "Xếp lên pallet" trong form nhập hàng (PalletFormSection.tsx) ----------
+   Một màu nhấn duy nhất (--accent); nhãn/chữ luôn xuống dòng (không cắt); lưới 2 cột, ô cao bằng nhau. */
+
+.switch-block {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.switch-block.is-on {
+  border-color: var(--accent-border);
+}
+
+.switch-block-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.switch-block-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.switch-block-titles h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-h);
+}
+
+.switch-block-sub {
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.switch-toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 22px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--border);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.switch-toggle[aria-checked='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+
+.switch-toggle[aria-checked='true'] .switch-toggle-knob {
+  transform: translateX(18px);
+}
+
+/* Phần chi tiết trượt mở/đóng: hàng lưới 0fr -> 1fr (chiều cao tự theo nội dung); khi đóng ẩn hẳn (visibility) nên không
+   focus/nhập được. Khoảng cách 10px với phần đầu nằm TRONG phần trượt để khi đóng không chừa khoảng trống. */
+.switch-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition: grid-template-rows 0.28s ease, opacity 0.2s ease, visibility 0s linear 0.28s;
+}
+
+.switch-collapse.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition: grid-template-rows 0.28s ease, opacity 0.25s ease 0.05s, visibility 0s;
+}
+
+.switch-collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.switch-collapse-pad {
+  padding-top: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch-collapse,
+  .switch-collapse.is-open {
+    transition: none;
+  }
+}
+
+/* fieldset gom các ô (disabled khi tắt công tắc) */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+/* Khi panel hẹp, 2 cột xuống 1 cột (không ép chữ vào ô hẹp) */
+@container (max-width: 220px) {
+  .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.unit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.unit-field-wide {
+  grid-column: 1 / -1;
+}
+
+.unit-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-h);
+  overflow-wrap: anywhere;
+}
+
+.unit-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.unit-input:focus-within {
+  border-color: var(--accent);
+}
+
+.unit-input.has-error {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.unit-input input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  background: none;
+  color: var(--text-h);
+  font: inherit;
+  font-size: 13px;
+}
+
+.unit-input input:focus {
+  outline: none;
+}
+
+.unit-input-unit {
+  flex-shrink: 0;
+  padding: 0 9px 0 2px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.unit-field select {
+  width: 100%;
+  min-width: 0;
+}
+
+.unit-field-hint {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.unit-field-error {
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.pallet-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pallet-quick-btn {
+  padding: 3px 9px;
+  font-size: 11.5px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.pallet-quick-btn.is-active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.pallet-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--accent-bg);
+}
+
+.pallet-note-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+/* Khối công tắc nằm trong panel đã có khung (vd "Dung sai xếp hàng"): bỏ viền/nền/đệm riêng của khối */
+.switch-block--flush,
+.switch-block--flush.is-on {
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+/* ---------- Bảng quy tắc tách nhóm hàng (SegregationRulesPanel.tsx) ---------- */
+
+.segregation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.segregation-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--text-h);
+  overflow-wrap: anywhere;
+}
+
+.segregation-add {
+  margin-bottom: 8px;
 }

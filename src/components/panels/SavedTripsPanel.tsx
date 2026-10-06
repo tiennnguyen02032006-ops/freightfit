@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../../store';
-import type { StoredTripEntry, TripPlanRecord, TripPlanStop, TripStopDistance } from '../../domain/types';
+import type { StoredTripEntry, TripPlanRecord, TripPlanStop } from '../../domain/types';
 import {
   deleteTrip,
   exportTripsJson,
@@ -8,6 +8,9 @@ import {
   loadTrips,
   saveTrip,
 } from '../../storage/tripStorage';
+import { applyPastedDistanceTable, getDistance, parseKm, setDistance } from '../../utils/tripDistances';
+import { clockToMinutesAfterDeparture, recomputeStopEtas } from '../../utils/tripTime';
+import { appendStops, defaultStopName, parseStopNames, reconcileTripWithCargo } from '../../utils/tripDeliveryPoints';
 import { proposeSingleRoute } from '../../engine/optimization/routeProposal';
 
 /**
@@ -67,23 +70,19 @@ function isStep2Done(plan: TripPlanRecord): boolean {
   return plan.cargo.length > 0;
 }
 
-function distanceBetween(distances: TripStopDistance[], a: string, b: string): number | null {
-  const found = distances.find(
-    (d) => (d.stopIdA === a && d.stopIdB === b) || (d.stopIdA === b && d.stopIdB === a),
-  );
-  return found ? found.km : null;
-}
-
 export function SavedTripsPanel({ onFindIncidentCause }: SavedTripsPanelProps) {
   const solution = useAppStore((s) => s.solution);
   const cargoTemplates = useAppStore((s) => s.cargoTemplates);
   const containerLibrary = useAppStore((s) => s.containerLibrary);
+  const tolerance = useAppStore((s) => s.tolerance);
+  const segregationRules = useAppStore((s) => s.segregationRules);
   const [routeBusy, setRouteBusy] = useState(false);
 
   const [tripsResult, setTripsResult] = useState(() => loadTrips());
   const [openTripId, setOpenTripId] = useState<string | null>(null);
   const [activeStep, setActiveStep] = useState<1 | 2 | 3>(1);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pastedStops, setPastedStops] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const trips = tripsResult.ok ? tripsResult.data.trips : [];
@@ -122,13 +121,19 @@ export function SavedTripsPanel({ onFindIncidentCause }: SavedTripsPanelProps) {
     persistEntry({ ...openTrip, plan: { ...openTrip.plan, ...patch } });
   };
 
+  // Thêm 1 điểm giao trống -> tự đặt tên mặc định "Điểm N" thay vì để trống tên.
   const addStop = () => {
     if (!openTrip) return;
-    const stops: TripPlanStop[] = [
-      ...openTrip.plan.stops,
-      { stopId: newId('stop'), order: openTrip.plan.stops.length, name: '', etaMinutes: 0 },
-    ];
-    updatePlan({ stops });
+    updatePlan({ stops: appendStops(openTrip.plan.stops, [''], () => newId('stop')) });
+  };
+
+  // Dán danh sách điểm giao (mỗi dòng 1 điểm) để tạo nhiều điểm cùng lúc.
+  const addPastedStops = () => {
+    if (!openTrip) return;
+    const names = parseStopNames(pastedStops);
+    if (names.length === 0) return;
+    updatePlan({ stops: appendStops(openTrip.plan.stops, names, () => newId('stop')) });
+    setPastedStops('');
   };
 
   const removeStop = (stopId: string) => {
@@ -136,7 +141,20 @@ export function SavedTripsPanel({ onFindIncidentCause }: SavedTripsPanelProps) {
     const stops = openTrip.plan.stops.filter((s) => s.stopId !== stopId).map((s, i) => ({ ...s, order: i }));
     // Kiện đang gán cho điểm vừa xoá không còn điểm giao hợp lệ để trỏ tới -> bỏ tham chiếu.
     const cargo = openTrip.plan.cargo.filter((c) => c.stopId !== stopId);
-    persistEntry({ ...openTrip, plan: { ...openTrip.plan, stops, cargo } });
+    const distances = (openTrip.plan.distances ?? []).filter((d) => d.stopIdA !== stopId && d.stopIdB !== stopId);
+    persistEntry({ ...openTrip, plan: { ...openTrip.plan, stops, cargo, distances } });
+  };
+
+  // Đổi giờ xuất phát -> tính lại phút sau xuất phát của mọi điểm giao đã có giờ đến.
+  const updateDeparture = (departureTime: string) => {
+    if (!openTrip) return;
+    updatePlan({ departureTime, stops: recomputeStopEtas(openTrip.plan.stops, departureTime) });
+  };
+
+  // Đổi giờ đến (giờ đồng hồ, để trống được) -> tự quy đổi sang phút sau khi xuất phát khi lưu.
+  const updateStopClock = (stopId: string, etaClock: string) => {
+    if (!openTrip) return;
+    updateStop(stopId, { etaClock, etaMinutes: clockToMinutesAfterDeparture(etaClock, openTrip.plan.departureTime) });
   };
 
   const updateStop = (stopId: string, patch: Partial<TripPlanStop>) => {
@@ -144,21 +162,27 @@ export function SavedTripsPanel({ onFindIncidentCause }: SavedTripsPanelProps) {
     updatePlan({ stops: openTrip.plan.stops.map((s) => (s.stopId === stopId ? { ...s, ...patch } : s)) });
   };
 
-  // Khoảng cách (km) giữa từng cặp điểm giao — người dùng tự nhập tay (xem TripStopDistance trong
-  // types.ts), dùng làm input cho "Đề xuất phương án" (Giai đoạn C). Lưu đối xứng: 1 bản ghi cho
-  // mỗi cặp, không phân biệt chiều A->B hay B->A.
+  // Khoảng cách (km) giữa từng cặp điểm giao — người dùng tự nhập tay hoặc dán từ Excel (xem
+  // TripStopDistance trong types.ts), dùng làm input cho "Đề xuất phương án" (Giai đoạn C). Lưu đối
+  // xứng: 1 bản ghi cho mỗi cặp. Ô để trống = chưa biết khoảng cách (không lưu bản ghi nào).
   const updateDistance = (stopIdA: string, stopIdB: string, value: string) => {
     if (!openTrip) return;
-    const km = Number(value);
-    const distances = openTrip.plan.distances ?? [];
-    const without = distances.filter(
-      (d) => !((d.stopIdA === stopIdA && d.stopIdB === stopIdB) || (d.stopIdA === stopIdB && d.stopIdB === stopIdA)),
-    );
-    updatePlan({ distances: [...without, { stopIdA, stopIdB, km: Number.isFinite(km) ? km : 0 }] });
+    updatePlan({ distances: setDistance(openTrip.plan.distances ?? [], stopIdA, stopIdB, parseKm(value)) });
+  };
+
+  // Dán nhiều ô cùng lúc (copy từ Excel) vào bảng khoảng cách, bắt đầu từ ô đang dán vào.
+  const pasteDistances = (text: string, row: number, col: number) => {
+    if (!openTrip) return;
+    updatePlan({ distances: applyPastedDistanceTable(openTrip.plan.stops, openTrip.plan.distances ?? [], text, row, col) });
   };
 
   const templateNameById = useMemo(
     () => new Map(cargoTemplates.map((t) => [t.id, t.name || t.sku])),
+    [cargoTemplates],
+  );
+
+  const deliveryPointById = useMemo(
+    () => new Map(cargoTemplates.map((t) => [t.id, t.deliveryPoint] as const)),
     [cargoTemplates],
   );
 
@@ -177,8 +201,9 @@ export function SavedTripsPanel({ onFindIncidentCause }: SavedTripsPanelProps) {
       cargoTemplateId,
       instanceIds,
       name: templateNameById.get(cargoTemplateId) ?? cargoTemplateId,
+      deliveryPoint: deliveryPointById.get(cargoTemplateId),
     }));
-  }, [solution, templateNameById]);
+  }, [solution, templateNameById, deliveryPointById]);
 
   const currentAssignment = (cargoTemplateId: string): string => {
     const existing = openTrip?.plan.cargo.find((c) => c.cargoTemplateId === cargoTemplateId);
@@ -194,20 +219,16 @@ export function SavedTripsPanel({ onFindIncidentCause }: SavedTripsPanelProps) {
     updatePlan({ cargo: [...others, ...updated] });
   };
 
-  // Cặp điểm giao còn thiếu khoảng cách (dùng để chặn nút "Đề xuất phương án" và nhắc người dùng
-  // nhập đủ trước — engine không tự đoán khoảng cách thiếu). KHÔNG dùng useMemo: danh sách điểm
-  // giao chỉ có vài phần tử (vòng lặp lồng nhau vẫn rất rẻ), và React Compiler không chứng minh
-  // được `openTrip` bất biến qua các lần render nên tự bỏ qua memo hoá thủ công ở đây (lỗi
-  // react-hooks/preserve-manual-memoization) — bỏ hẳn useMemo tránh lỗi đó mà không đổi kết quả.
-  const missingDistancePairs: Array<[TripPlanStop, TripPlanStop]> = [];
+  // Số cặp điểm giao còn để trống khoảng cách — chỉ để nhắc người dùng, KHÔNG chặn "Đề xuất phương án"
+  // (đoạn chưa biết không được tính vào quãng đường, xem engine/optimization/routeProposal.ts). Không
+  // dùng useMemo vì React Compiler bỏ qua memo hoá thủ công ở đây (react-hooks/preserve-manual-memoization).
+  let missingDistanceCount = 0;
   if (openTrip) {
     const stops = openTrip.plan.stops;
     const distances = openTrip.plan.distances ?? [];
     for (let i = 0; i < stops.length; i++) {
       for (let j = i + 1; j < stops.length; j++) {
-        if (distanceBetween(distances, stops[i].stopId, stops[j].stopId) === null) {
-          missingDistancePairs.push([stops[i], stops[j]]);
-        }
+        if (getDistance(distances, stops[i].stopId, stops[j].stopId) === null) missingDistanceCount++;
       }
     }
   }
@@ -228,32 +249,27 @@ export function SavedTripsPanel({ onFindIncidentCause }: SavedTripsPanelProps) {
         stops: openTrip.plan.stops,
         distances: openTrip.plan.distances ?? [],
         stopIdByCargoTemplateId,
+        tolerance,
+        segregationRules,
       });
       persistEntry({ ...openTrip, route });
       setRouteBusy(false);
     }, 0);
   };
 
-  // Tự động gán ĐIỂM GIAO ĐẦU TIÊN cho loại hàng nào chưa được gán (vd vừa "Tạo phương án xếp
-  // hàng" xong, chưa ai bấm vào ô chọn điểm giao nào cả) — để "✓ Đã xếp N kiện cho M điểm giao"
-  // và Bước 3 tự mở ra ngay khi có phương án + điểm giao, không bắt người dùng phải chạm vào từng
-  // ô chọn dù chỉ để "xác nhận" giá trị mặc định đã đúng. Người dùng vẫn đổi được điểm giao khác
-  // bất cứ lúc nào qua <select> bên dưới, gán tự động ở đây chỉ là giá trị khởi điểm.
+  // Tự đồng bộ điểm giao + gán hàng của chuyến đang mở (xem utils/tripDeliveryPoints.ts): hàng
+  // import có cột "Điểm giao" -> tự tạo điểm giao còn thiếu và gán đúng điểm, không cần gán tay;
+  // hàng không có cột đó vẫn được gán điểm giao đầu tiên làm giá trị khởi điểm (đổi được qua
+  // <select> ở Bước 2).
   useEffect(() => {
-    if (!openTrip || openTrip.plan.stops.length === 0) return;
-    const assignedTemplateIds = new Set(openTrip.plan.cargo.map((c) => c.cargoTemplateId));
-    const missing = liveCargoGroups.filter((g) => !assignedTemplateIds.has(g.cargoTemplateId));
-    if (missing.length === 0) return;
-    const defaultStopId = openTrip.plan.stops[0].stopId;
-    const added = missing.flatMap((g) =>
-      g.instanceIds.map((cargoInstanceId) => ({ cargoInstanceId, cargoTemplateId: g.cargoTemplateId, stopId: defaultStopId })),
-    );
+    if (!openTrip) return;
+    const next = reconcileTripWithCargo(openTrip.plan, liveCargoGroups, () => newId('stop'));
+    if (!next) return;
     // Ghi localStorage (external system) là việc HỢP LỆ để làm trong effect — chỉ bọc lại lệnh
     // setState (bên trong persistEntry, qua refresh()) bằng queueMicrotask để tránh bị
-    // react-hooks/set-state-in-effect chặn do gọi setState "trực tiếp" ngay đầu thân effect; vẫn
-    // chạy ngay sau, trước lần vẽ tiếp theo, không đổi thời điểm ghi/lưu so với trước.
+    // react-hooks/set-state-in-effect chặn do gọi setState "trực tiếp" ngay đầu thân effect.
     queueMicrotask(() => {
-      persistEntry({ ...openTrip, plan: { ...openTrip.plan, cargo: [...openTrip.plan.cargo, ...added] } });
+      persistEntry({ ...openTrip, plan: next });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openTrip, liveCargoGroups]);
@@ -414,6 +430,10 @@ export function SavedTripsPanel({ onFindIncidentCause }: SavedTripsPanelProps) {
                 <span>Đặt tên cho chuyến</span>
                 <input type="text" value={openTrip.plan.name} onChange={(e) => updatePlan({ name: e.target.value })} />
               </label>
+              <label className="field field-sm">
+                <span>Giờ xuất phát</span>
+                <input type="time" value={openTrip.plan.departureTime ?? ''} onChange={(e) => updateDeparture(e.target.value)} />
+              </label>
               <p className="trip-hint">Nhập nơi xe sẽ giao hàng, theo thứ tự.</p>
               {openTrip.plan.stops.length === 0 && <p className="bb-muted">Chưa có điểm giao nào.</p>}
               {openTrip.plan.stops.map((s) => (
@@ -424,15 +444,23 @@ export function SavedTripsPanel({ onFindIncidentCause }: SavedTripsPanelProps) {
                       type="text"
                       value={s.name}
                       onChange={(e) => updateStop(s.stopId, { name: e.target.value })}
+                      onBlur={(e) => {
+                        if (e.target.value.trim() === '') {
+                          updateStop(s.stopId, { name: defaultStopName(openTrip.plan.stops.filter((x) => x.stopId !== s.stopId).map((x) => x.name)) });
+                        }
+                      }}
                       placeholder={`Điểm ${s.order + 1}`}
                     />
                   </label>
                   <label className="field field-sm">
-                    <span>Giờ dự kiến đến (phút sau khi xuất phát)</span>
+                    <span>
+                      Giờ dự kiến đến (không bắt buộc)
+                      {s.etaMinutes !== undefined ? ` — ${s.etaMinutes} phút sau xuất phát` : ''}
+                    </span>
                     <input
-                      type="number"
-                      value={s.etaMinutes}
-                      onChange={(e) => updateStop(s.stopId, { etaMinutes: Number(e.target.value) })}
+                      type="time"
+                      value={s.etaClock ?? ''}
+                      onChange={(e) => updateStopClock(s.stopId, e.target.value)}
                     />
                   </label>
                   <button type="button" className="icon-button" aria-label="Xoá điểm giao" onClick={() => removeStop(s.stopId)}>
@@ -441,29 +469,68 @@ export function SavedTripsPanel({ onFindIncidentCause }: SavedTripsPanelProps) {
                 </div>
               ))}
               <button type="button" className="bb-btn" onClick={addStop}>+ Thêm điểm giao</button>
+              <label className="field field-sm">
+                <span>Hoặc dán danh sách điểm giao (mỗi dòng 1 điểm)</span>
+                <textarea
+                  rows={4}
+                  value={pastedStops}
+                  onChange={(e) => setPastedStops(e.target.value)}
+                  placeholder={'Kho Hà Nội' + String.fromCharCode(10) + 'Kho Huế'}
+                />
+              </label>
+              <button type="button" className="bb-btn" disabled={parseStopNames(pastedStops).length === 0} onClick={addPastedStops}>
+                Thêm {parseStopNames(pastedStops).length || ''} điểm giao từ danh sách
+              </button>
 
               {openTrip.plan.stops.length >= 2 && (
                 <>
                   <p className="trip-hint">
-                    Khoảng cách ước lượng giữa các điểm giao (km, tự nhập) — dùng để đề xuất thứ tự giao ở Bước 2.
+                    Khoảng cách ước lượng giữa các điểm giao (km) — nhập tay hoặc copy bảng từ Excel rồi dán vào
+                    một ô (dán được cả tiêu đề tên điểm). Ô để trống = chưa biết, đề xuất vẫn chạy nhưng không
+                    tính đoạn đó vào quãng đường.
                   </p>
-                  {openTrip.plan.stops.map((a, i) =>
-                    openTrip.plan.stops.slice(i + 1).map((b) => (
-                      <div key={`${a.stopId}-${b.stopId}`} className="field-row trip-stop-row">
-                        <span className="trip-cargo-name">
-                          {a.name || `Điểm ${a.order + 1}`} ↔ {b.name || `Điểm ${b.order + 1}`}
-                        </span>
-                        <input
-                          type="number"
-                          min={0}
-                          className="trip-distance-input"
-                          value={distanceBetween(openTrip.plan.distances ?? [], a.stopId, b.stopId) ?? ''}
-                          onChange={(e) => updateDistance(a.stopId, b.stopId, e.target.value)}
-                          placeholder="km"
-                        />
-                      </div>
-                    )),
-                  )}
+                  <div className="trip-distance-table-wrap">
+                    <table className="trip-distance-table">
+                      <thead>
+                        <tr>
+                          <th />
+                          {openTrip.plan.stops.map((s) => (
+                            <th key={s.stopId}>{s.name || `Điểm ${s.order + 1}`}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {openTrip.plan.stops.map((a, i) => (
+                          <tr key={a.stopId}>
+                            <th>{a.name || `Điểm ${a.order + 1}`}</th>
+                            {openTrip.plan.stops.map((b, j) => (
+                              <td key={b.stopId}>
+                                {a.stopId === b.stopId ? (
+                                  <span className="bb-muted">—</span>
+                                ) : (
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step="any"
+                                    className="trip-distance-input"
+                                    value={getDistance(openTrip.plan.distances ?? [], a.stopId, b.stopId) ?? ''}
+                                    onChange={(e) => updateDistance(a.stopId, b.stopId, e.target.value)}
+                                    onPaste={(e) => {
+                                      const text = e.clipboardData.getData('text');
+                                      if (!/[\t\n]/.test(text.trim())) return; // dán 1 giá trị -> để trình duyệt tự xử lý
+                                      e.preventDefault();
+                                      pasteDistances(text, i, j);
+                                    }}
+                                    placeholder="km"
+                                  />
+                                )}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </>
               )}
             </div>
@@ -494,15 +561,19 @@ export function SavedTripsPanel({ onFindIncidentCause }: SavedTripsPanelProps) {
                   {liveCargoGroups.map((g) => (
                     <div key={g.cargoTemplateId} className="field-row trip-stop-row">
                       <span className="trip-cargo-name">{g.name} × {g.instanceIds.length}</span>
-                      <select
-                        className="bb-select"
-                        value={currentAssignment(g.cargoTemplateId)}
-                        onChange={(e) => assignGroupToStop(g.cargoTemplateId, e.target.value)}
-                      >
-                        {openTrip.plan.stops.map((s) => (
-                          <option key={s.stopId} value={s.stopId}>{s.name || `Điểm ${s.order + 1}`}</option>
-                        ))}
-                      </select>
+                      {g.deliveryPoint ? (
+                        <span className="trip-cargo-name">→ {g.deliveryPoint} (từ file import)</span>
+                      ) : (
+                        <select
+                          className="bb-select"
+                          value={currentAssignment(g.cargoTemplateId)}
+                          onChange={(e) => assignGroupToStop(g.cargoTemplateId, e.target.value)}
+                        >
+                          {openTrip.plan.stops.map((s) => (
+                            <option key={s.stopId} value={s.stopId}>{s.name || `Điểm ${s.order + 1}`}</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   ))}
 
@@ -510,15 +581,15 @@ export function SavedTripsPanel({ onFindIncidentCause }: SavedTripsPanelProps) {
                     <p className="trip-hint">
                       Chọn 1 phương án giao hàng đề xuất: thứ tự giao + xe, sao cho không kiện nào bị chắn khi dỡ hàng.
                     </p>
-                    {missingDistancePairs.length > 0 && (
+                    {missingDistanceCount > 0 && (
                       <p className="trip-step-reason">
-                        Còn thiếu khoảng cách giữa {missingDistancePairs.length} cặp điểm giao — nhập đủ ở Bước 1 trước.
+                        Còn {missingDistanceCount} cặp điểm giao chưa nhập khoảng cách (Bước 1) — vẫn đề xuất được, nhưng các đoạn đó không được tính vào quãng đường.
                       </p>
                     )}
                     <button
                       type="button"
                       className="bb-btn"
-                      disabled={routeBusy || missingDistancePairs.length > 0}
+                      disabled={routeBusy}
                       onClick={handleProposeRoute}
                     >
                       {routeBusy ? 'Đang tính...' : 'Đề xuất phương án'}
@@ -620,6 +691,7 @@ function RouteResultCard({ route, stops }: RouteResultCardProps) {
       <p className="trip-hint">Tỷ lệ lấp đầy xe: {proposal.fillRatioPercent.toFixed(0)}%</p>
       <p className="trip-hint">
         Quãng đường ước lượng: {proposal.estimatedDistanceKm} km
+        {proposal.unknownLegCount ? ` (chưa tính ${proposal.unknownLegCount} đoạn chưa nhập khoảng cách)` : ''}
         {extraKm > 0 && ` (dài hơn ${extraKm} km so với thứ tự ngắn nhất${proposal.usedHeuristic ? ' đã xét' : ''} để không kiện nào bị chắn)`}
       </p>
       <p className="trip-hint">Số kiện bị chắn: {proposal.blockedCount}</p>

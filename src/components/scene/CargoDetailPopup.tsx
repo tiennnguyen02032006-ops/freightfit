@@ -1,3 +1,6 @@
+import { resolveBlockTemplate } from '../../engine/palletizing/palletBlock';
+import { findPalletBox } from '../../engine/palletizing/palletBoxes';
+import { getPalletType } from '../../engine/preprocessing/palletTypes';
 import { useState } from 'react';
 import { useAppStore } from '../../store';
 import type { ContainerInstance } from '../../domain/types';
@@ -22,6 +25,7 @@ export function CargoDetailPopup({ container }: CargoDetailPopupProps) {
   const cargoTemplates = useAppStore((s) => s.cargoTemplates);
   const selectedPlacementId = useAppStore((s) => s.ui.selectedPlacementId);
   const selectPlacement = useAppStore((s) => s.selectPlacement);
+  const selectedBoxId = useAppStore((s) => s.ui.selectedBoxId);
 
   const [showHelp, setShowHelp] = useState(false);
   // Thu gọn RIÊNG cho bảng này (khác hẳn nút "×" đóng/bỏ chọn kiện hàng) — chỉ ẩn phần danh sách
@@ -50,13 +54,17 @@ export function CargoDetailPopup({ container }: CargoDetailPopupProps) {
 
   // Hàng 'NONE' (không có orientation nào khác) sẽ không xoay được trục nào cả — hiện lý do thay
   // vì im lặng không có mũi tên nào trong khung 3D.
-  const { canRotateX, canRotateY, canRotateZ } = getAvailableRotationAxes(placement, template.allowedOrientations);
+  // Pallet là khối cứng: xoay/giới hạn xếp chồng tính theo template của CẢ KHỐI (xem palletizing/palletBlock.ts).
+  const blockTemplate = resolveBlockTemplate(template, placement);
+  // Đang chọn 1 THÙNG trong pallet: hiện thông tin thùng, rồi thông tin pallet chứa nó.
+  const boxInfo = selectedBoxId ? findPalletBox(placement, selectedBoxId) : null;
+  const { canRotateX, canRotateY, canRotateZ } = getAvailableRotationAxes(placement, blockTemplate.allowedOrientations);
   const cannotRotate = !canRotateX && !canRotateY && !canRotateZ;
 
   return (
     <div className="cargo-detail-popup">
       <div className="cargo-detail-popup-header">
-        <strong>{template.sku}</strong>
+        <strong>{boxInfo ? `Thùng · ${template.sku}` : placement.palletLoad ? `${placement.palletLoad.isPartial ? 'Pallet lẻ' : 'Pallet'} · ${template.sku}` : placement.palletLeftover ? `Thùng rời · ${template.sku}` : template.sku}</strong>
         <div className="cargo-detail-popup-header-actions">
           <button
             type="button"
@@ -85,6 +93,36 @@ export function CargoDetailPopup({ container }: CargoDetailPopupProps) {
 
       {!collapsed && (
         <>
+          {boxInfo && (
+            <>
+              <ul>
+                <li>
+                  <span>Tên</span>
+                  <span>{template.name}</span>
+                </li>
+                <li>
+                  <span>Kích thước thùng</span>
+                  <span>
+                    {formatMmAsCm(boxInfo.box.length)} × {formatMmAsCm(boxInfo.box.width)} × {formatMmAsCm(boxInfo.box.height)} cm
+                  </span>
+                </li>
+                <li>
+                  <span>Khối lượng thùng</span>
+                  <span>{boxInfo.box.weight} kg</span>
+                </li>
+                <li>
+                  <span>Vị trí trên pallet</span>
+                  <span>
+                    Lớp {boxInfo.layerNumber}/{boxInfo.layerCount} · thùng {boxInfo.indexInLayer}/{boxInfo.layerBoxCount} (thùng {boxInfo.boxNumber}/{boxInfo.boxTotal})
+                  </span>
+                </li>
+              </ul>
+              <p className="cargo-detail-popup-hint">
+                <strong>Pallet chứa thùng này</strong>
+                {placement.palletLoad ? ` · ${getPalletType(placement.palletLoad.palletType).label}` : ''}
+              </p>
+            </>
+          )}
           <ul>
             <li>
               <span>Tên</span>
@@ -96,9 +134,20 @@ export function CargoDetailPopup({ container }: CargoDetailPopupProps) {
                 {formatMmAsCm(placement.length)} × {formatMmAsCm(placement.width)} × {formatMmAsCm(placement.height)} cm
               </span>
             </li>
+            {placement.palletLoad && (
+              <li>
+                <span>Pallet</span>
+                <span>
+                  {placement.palletLoad.boxCount} thùng · {placement.palletLoad.layers.length} lớp
+                </span>
+              </li>
+            )}
             <li>
               <span>Khối lượng</span>
-              <span>{placement.weight} kg</span>
+              <span>
+                {placement.weight} kg
+                {placement.palletLoad ? ` (hàng ${placement.palletLoad.totalWeight} + pallet ${placement.palletLoad.palletWeight})` : ''}
+              </span>
             </li>
             <li>
               <span>Stack level</span>
@@ -106,11 +155,11 @@ export function CargoDetailPopup({ container }: CargoDetailPopupProps) {
             </li>
             <li>
               <span>Giới hạn xếp chồng</span>
-              <span>{template.maxStackLevel ?? 'không giới hạn'}</span>
+              <span>{blockTemplate.maxStackLevel ?? 'không giới hạn'}</span>
             </li>
             <li>
               <span>Rotation</span>
-              <span>{template.rotation}</span>
+              <span>{blockTemplate.rotation}</span>
             </li>
             <li>
               <span>Support ratio</span>

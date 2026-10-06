@@ -23,7 +23,7 @@ generateSolution(cargoTemplates, containerTemplate):
     return PackingSolution(containers, remaining nếu còn = unfitCargo, stats)
 ```
 
-Không có bước sinh nhiều "vehicle plan" theo tổ hợp NHIỀU LOẠI xe khác nhau rồi chọn theo cost —
+Không có bước sinh nhiều "vehicle plan" theo tổ hợp NHIỀU LOẠI xe khác nhau rồi chọn —
 người dùng tự chọn 1 `containerTemplate`, `generateSolution` chỉ tự tính SỐ LƯỢNG container CẦN
 DÙNG (lặp lại cùng 1 loại). Không có bước `localSearch`/`evaluate` sau khi có solution — solution
 đầu tiên xếp được (feasible) chính là kết quả cuối cùng.
@@ -194,7 +194,7 @@ Các phần sau đã được THIẾT KẾ (hằng số/kiểu dữ liệu đã 
 cầu rõ (xem "Việc KHÔNG làm" trong `CLAUDE.md`):
 - **Local search** (move/swap/rotate/repack sau khi có solution feasible, cải thiện dần theo
   `EvaluatorWeights`/`LOCAL_SEARCH_TIME_LIMIT_MS`/`MAX_LOCAL_SEARCH_ITERATIONS`).
-- **Multi-container theo TỔ HỢP nhiều loại xe khác nhau** kèm so sánh chi phí (`costCalculator`) —
+- **Multi-container theo TỔ HỢP nhiều loại xe khác nhau** —
   hiện `generateSolutions.ts` chỉ tự lặp lại CÙNG 1 loại container người dùng đã chọn.
 - **Edit history (undo/redo)** — `EditHistoryState` đã khai báo trong `types.ts`/`store/index.ts`
   nhưng chưa có action nào ghi vào đó, chưa có nút Undo/Redo nào trong UI.

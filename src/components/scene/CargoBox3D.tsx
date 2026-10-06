@@ -3,6 +3,10 @@ import type { ThreeEvent } from '@react-three/fiber';
 import { Edges } from '@react-three/drei';
 import type { CargoTemplate, Placement } from '../../domain/types';
 import { getCargoLabelTexture } from './boxLabelTexture';
+import { PalletBlock3D } from './PalletBlock3D';
+
+// Viền màu cam cho thùng THỪA xếp rời của SKU xếp pallet — phân biệt với hàng trên pallet (viền đen).
+const LEFTOVER_EDGE_COLOR = '#ff8a00';
 
 interface CargoBox3DProps {
   placement: Placement;
@@ -86,8 +90,8 @@ export function CargoBox3D({
   // đã làm mờ để nhường chỗ quan sát loại khác).
   const edgeColor = faded
     ? '#999999'
-    : (previewColor ?? (highlighted ? '#ffe066' : selected ? '#ffffff' : '#1c1c1c'));
-  const edgeWidth = faded ? 1 : (previewTint ? 3 : highlighted ? 3.5 : selected ? 2.5 : 1.25);
+    : (previewColor ?? (highlighted ? '#ffe066' : selected ? '#ffffff' : placement.palletLeftover ? LEFTOVER_EDGE_COLOR : '#1c1c1c'));
+  const edgeWidth = faded ? 1 : (previewTint ? 3 : highlighted ? 3.5 : selected ? 2.5 : placement.palletLeftover ? 2 : 1.25);
   // Phát sáng nhẹ (emissive) khi highlighted — chỉ dùng cho hiệu ứng "vừa thêm vào" tạm thời của
   // simulation, tự tắt sau vài giây (xem ContainerScene.tsx), không phải trạng thái `selected`.
   const emissive = previewColor ?? (highlighted ? '#ffe066' : '#000000');
@@ -97,6 +101,23 @@ export function CargoBox3D({
     event.stopPropagation();
     onSelect(placement.id, event.shiftKey);
   };
+
+  // Pallet (khối cứng): vẽ đế gỗ + từng thùng đúng vị trí đã lưu, viền/chọn/kéo theo cả khối.
+  if (placement.palletLoad) {
+    return (
+      <PalletBlock3D
+        placement={placement}
+        template={template}
+        edgeColor={edgeColor}
+        edgeWidth={edgeWidth}
+        emissive={emissive}
+        emissiveIntensity={emissiveIntensity}
+        faded={faded}
+        renderAtOrigin={renderAtOrigin}
+        onClick={disableSelect ? undefined : handleClick}
+      />
+    );
+  }
 
   if (isCylinder) {
     // Đường kính lấy từ length (= width, xem AddCargoPanel.tsx) -> bán kính = length/2.

@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import type { CargoImportRow, CargoTemplate, Clearance, RotationAxis } from '../domain/types';
+import type { CargoImportRow, CargoTemplate, Clearance, DangerClass, RotationAxis, SpecialGroup } from '../domain/types';
 import { computeAllowedOrientations } from '../engine/preprocessing/orientation';
 
 export type LengthUnit = 'mm' | 'cm' | 'm' | 'in' | 'ft';
@@ -71,7 +71,12 @@ function getField(row: Record<string, unknown>, aliases: string[]): unknown {
   return undefined;
 }
 
-function toImportRow(row: Record<string, unknown>, index: number): CargoImportRow {
+const CUSTOMER_ALIASES = ['Khách hàng', 'khach hang', 'Khách', 'khach', 'Tên khách hàng', 'ten khach hang', 'customer', 'customer name', 'client'];
+const DESTINATION_PORT_ALIASES = ['Cảng đích', 'cang dich', 'Cảng đến', 'cang den', 'Cảng', 'cang', 'destination port', 'destination', 'port of discharge', 'port'];
+
+const DELIVERY_POINT_ALIASES = ['Điểm giao', 'diem giao', 'Điểm giao hàng', 'diem giao hang', 'delivery point', 'delivery'];
+
+export function toImportRow(row: Record<string, unknown>, index: number): CargoImportRow {
   const colorCell = getField(row, ['color', 'Màu', 'mau']);
 
   // Một số file mẫu gộp chung SKU và tên hàng vào 1 cột (vd "Tên mặt hàng/sku"). Khi đó dùng
@@ -94,9 +99,83 @@ function toImportRow(row: Record<string, unknown>, index: number): CargoImportRo
       return v ? String(v) : undefined;
     })(),
     colorRaw: colorCell ? String(colorCell) : undefined,
+    deliveryPointRaw: String(getField(row, DELIVERY_POINT_ALIASES) ?? '').trim() || undefined,
+    customerRaw: String(getField(row, CUSTOMER_ALIASES) ?? '').trim() || undefined,
+    destinationPortRaw: String(getField(row, DESTINATION_PORT_ALIASES) ?? '').trim() || undefined,
+    cargoGroupRaw: String(getField(row, ['Nhóm hàng', 'nhom hang', 'Nhóm', 'nhom', 'cargo group', 'group']) ?? '').trim() || undefined,
+    dangerClassRaw: String(getField(row, ['Lớp', 'lop', 'Lớp nguy hiểm', 'lop nguy hiem', 'class', 'dg class', 'imdg class']) ?? '').trim() || undefined,
     valid: true,
   };
   return validateImportRow(importRow);
+}
+
+// ---------- Nhóm hàng đặc biệt (cột "Nhóm hàng" + "Lớp") ----------
+
+export type CargoGroupParse =
+  | { ok: true; cargoGroup?: SpecialGroup; dangerClass?: DangerClass }
+  | { ok: false; error: string };
+
+// bỏ dấu, hạ chữ thường, gộp khoảng trắng — để "Thực phẩm"/"thuc pham"/"THỰC  PHẨM" cùng khớp
+function foldText(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const GROUP_TEXT: Record<string, SpecialGroup | 'GENERAL'> = {
+  '': 'GENERAL',
+  thuong: 'GENERAL',
+  'hang thuong': 'GENERAL',
+  'binh thuong': 'GENERAL',
+  general: 'GENERAL',
+  normal: 'GENERAL',
+  'thuc pham': 'FOOD',
+  food: 'FOOD',
+  'co mui': 'ODOROUS',
+  'hang co mui': 'ODOROUS',
+  mui: 'ODOROUS',
+  odorous: 'ODOROUS',
+  odor: 'ODOROUS',
+  'hoa chat': 'CHEMICAL',
+  chemical: 'CHEMICAL',
+  'nguy hiem': 'DANGEROUS',
+  'hang nguy hiem': 'DANGEROUS',
+  dangerous: 'DANGEROUS',
+  dg: 'DANGEROUS',
+  imdg: 'DANGEROUS',
+};
+
+function parseDangerClass(text: string): DangerClass | null {
+  const match = /^(?:lop|class|dg)?\s*-?\s*([1-9])$/.exec(foldText(text));
+  return match ? (Number(match[1]) as DangerClass) : null;
+}
+
+/**
+ * Đọc cột "Nhóm hàng" (thường/thực phẩm/có mùi/hóa chất/nguy hiểm) và cột "Lớp" (1–9, chỉ cần với hàng nguy hiểm). Chấp nhận
+ * cả dạng gộp trong 1 ô như "DG3", "Nguy hiểm 3", "Lớp 3". Trống = hàng thường. Giá trị lạ hoặc hàng nguy hiểm thiếu/sai
+ * lớp là lỗi (dòng bị đánh dấu không hợp lệ ở bước xem trước import).
+ */
+export function parseCargoGroup(groupRaw?: string, classRaw?: string): CargoGroupParse {
+  const group = foldText(groupRaw ?? '');
+  const classText = (classRaw ?? '').trim();
+
+  // dạng gộp: "DG3", "Nguy hiem 3", "Class 3"
+  const merged = /^(?:dg|class|lop|nguy hiem|hang nguy hiem|dangerous)\s*-?\s*([1-9])$/.exec(group);
+  if (merged) return { ok: true, cargoGroup: 'DANGEROUS', dangerClass: Number(merged[1]) as DangerClass };
+
+  const kind = GROUP_TEXT[group];
+  if (kind === undefined) return { ok: false, error: `Nhóm hàng không hợp lệ: "${(groupRaw ?? '').trim()}"` };
+  if (kind === 'GENERAL') return { ok: true };
+  if (kind !== 'DANGEROUS') return { ok: true, cargoGroup: kind };
+
+  if (classText === '') return { ok: false, error: 'Hàng nguy hiểm cần ghi lớp 1–9' };
+  const dangerClass = parseDangerClass(classText);
+  if (dangerClass === null) return { ok: false, error: `Lớp hàng nguy hiểm phải từ 1 đến 9 (đang là "${classText}")` };
+  return { ok: true, cargoGroup: 'DANGEROUS', dangerClass };
 }
 
 export function validateImportRow(row: CargoImportRow): CargoImportRow {
@@ -107,6 +186,8 @@ export function validateImportRow(row: CargoImportRow): CargoImportRow {
   if (!(row.height > 0)) errors.push('Height phải > 0');
   if (!(row.weight > 0)) errors.push('Weight phải > 0');
   if (!(row.quantity >= 1)) errors.push('Quantity phải >= 1');
+  const groupParse = parseCargoGroup(row.cargoGroupRaw, row.dangerClassRaw);
+  if (!groupParse.ok) errors.push(groupParse.error);
 
   return {
     ...row,
@@ -132,6 +213,7 @@ export function mapRowToCargoTemplate(row: CargoImportRow, options: MapRowOption
   const width = convertToMm(row.width, options.unit);
   const height = convertToMm(row.height, options.unit);
   const rotation = mapRotationRaw(row.rotationRaw);
+  const groupParse = parseCargoGroup(row.cargoGroupRaw, row.dangerClassRaw);
 
   return {
     id: `cargo-${row.sku}-${row.rowIndex}`,
@@ -150,5 +232,9 @@ export function mapRowToCargoTemplate(row: CargoImportRow, options: MapRowOption
     fragile: false,
     mustKeepUpright: false,
     clearance: DEFAULT_CLEARANCE,
+    deliveryPoint: row.deliveryPointRaw?.trim() || undefined,
+    customer: row.customerRaw?.trim() || undefined,
+    destinationPort: row.destinationPortRaw?.trim() || undefined,
+    ...(groupParse.ok && groupParse.cargoGroup ? { cargoGroup: groupParse.cargoGroup, dangerClass: groupParse.dangerClass } : {}),
   };
 }

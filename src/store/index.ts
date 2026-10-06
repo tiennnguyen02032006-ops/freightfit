@@ -1,5 +1,7 @@
 import { create } from 'zustand';
-import type { EditHistoryState } from '../domain/types';
+import type { EditHistoryState, SegregationRule, ToleranceSettings } from '../domain/types';
+import { DEFAULT_TOLERANCE_SETTINGS } from '../engine/config';
+import { DEFAULT_SEGREGATION_RULES } from '../engine/segregation';
 import { createContainerSlice, type ContainerSlice } from './slices/containerSlice';
 import { createCargoSlice, type CargoSlice } from './slices/cargoSlice';
 import { createSolutionSlice, type SolutionSlice } from './slices/solutionSlice';
@@ -12,6 +14,11 @@ export interface UiState {
   // true = đang ở "chế độ xoay" (hiện đủ 3 mũi tên cong X/Y/Z, bấm đầu mũi tên để xoay) cho kiện
   // đang chọn, thay cho chế độ di chuyển mặc định — xem CameraToolbar.tsx/DraggablePlacement.tsx.
   rotateModeActive: boolean;
+  // Thùng đang chọn trong 1 pallet (xem domain/types.ts AppState.ui.selectedBoxId) — luôn bị xóa khi
+  // đổi/bỏ chọn kiện qua selectPlacement; chỉ selectPalletBox mới đặt giá trị.
+  selectedBoxId: string | null;
+  // Hiện lớp "Chèn lót" trong khung 3D (mặc định true) — xem domain/types.ts AppState.ui.showDunnage.
+  showDunnage: boolean;
 }
 
 // Phần state chưa dùng ở Phase 1 (activeContainerInstanceId/editHistory/currentStepIndex
@@ -25,12 +32,18 @@ export interface RootExtraState {
   editHistory: EditHistoryState;
   currentStepIndex: number;
   ui: UiState;
-  // Quãng đường (km) nhập ở TransportCostPanel — nâng lên store (thay vì state cục bộ riêng của
-  // panel đó trước đây) để suggestBetterContainer.ts cũng đọc được cùng giá trị khi so sánh chi
-  // phí giữa các loại container/xe (xem domain/types.ts AppState.transportDistanceKm).
-  transportDistanceKm: number;
-  setTransportDistanceKm: (km: number) => void;
+  // Dung sai xếp hàng (bật/tắt, dung sai mặc định mỗi chiều của thùng, khe pallet–pallet/vách) — mặc định bật
+  // với thùng 1,5 cm và khe 3 cm (xem engine/tolerance.ts). Đổi ở đây chỉ có tác dụng ở lần "Tạo phương án" kế tiếp.
+  tolerance: ToleranceSettings;
+  setTolerance: (patch: Partial<ToleranceSettings>) => void;
+  // Bảng quy tắc "nhóm nào không được chung container" (xem engine/segregation.ts) — người dùng chỉnh được; mặc định chỉ là
+  // vài cặp ví dụ, phải đối chiếu quy định IMDG hiện hành. Chỉ có tác dụng ở lần "Tạo phương án" kế tiếp.
+  segregationRules: SegregationRule[];
+  setSegregationRules: (rules: SegregationRule[]) => void;
   selectPlacement: (placementId: string | null) => void;
+  // Chọn 1 thùng trong pallet (gọi SAU selectPlacement của pallet chứa nó).
+  selectPalletBox: (boxId: string | null) => void;
+  toggleDunnage: () => void;
   setViewMode: (mode: UiState['viewMode']) => void;
   setCurrentStepIndex: (index: number) => void;
   // Bật/tắt (hoặc đặt thẳng true/false, dùng khi thoát bằng Esc) chế độ xoay cho kiện đang chọn —
@@ -55,22 +68,31 @@ export const useAppStore = create<RootStore>()((set, get, api) => ({
   activeContainerInstanceId: null,
   editHistory: { actions: [], currentIndex: -1 },
   currentStepIndex: 0,
-  ui: { viewMode: '3D', selectedPlacementId: null, isLoading: false, rotateModeActive: false },
-  transportDistanceKm: 0,
-  setTransportDistanceKm: (km) => set({ transportDistanceKm: km }),
+  tolerance: DEFAULT_TOLERANCE_SETTINGS,
+  setTolerance: (patch) => set((state) => ({ tolerance: { ...state.tolerance, ...patch } })),
+  segregationRules: DEFAULT_SEGREGATION_RULES,
+  setSegregationRules: (rules) => set({ segregationRules: rules }),
+  ui: { viewMode: '3D', selectedPlacementId: null, selectedBoxId: null, showDunnage: true, isLoading: false, rotateModeActive: false },
   // Bỏ chọn kiện hàng (placementId = null) luôn tắt kèm chế độ xoay — mũi tên xoay chỉ có ý nghĩa
   // khi đang chọn đúng 1 kiện, giữ chế độ xoay bật cho 1 lựa chọn "trống" sẽ chỉ gây rối.
   selectPlacement: (placementId) =>
     set((state) => ({
-      ui: { ...state.ui, selectedPlacementId: placementId, rotateModeActive: placementId ? state.ui.rotateModeActive : false },
+      ui: {
+        ...state.ui,
+        selectedPlacementId: placementId,
+        selectedBoxId: null,
+        rotateModeActive: placementId ? state.ui.rotateModeActive : false,
+      },
     })),
+  toggleDunnage: () => set((state) => ({ ui: { ...state.ui, showDunnage: !state.ui.showDunnage } })),
+  selectPalletBox: (boxId) => set((state) => ({ ui: { ...state.ui, selectedBoxId: boxId } })),
   toggleRotateMode: () => set((state) => ({ ui: { ...state.ui, rotateModeActive: !state.ui.rotateModeActive } })),
   setRotateMode: (active) => set((state) => ({ ui: { ...state.ui, rotateModeActive: active } })),
   setActiveContainer: (containerInstanceId) =>
     set((state) => ({
       activeContainerInstanceId: containerInstanceId,
       currentStepIndex: 0,
-      ui: { ...state.ui, selectedPlacementId: null, rotateModeActive: false },
+      ui: { ...state.ui, selectedPlacementId: null, selectedBoxId: null, rotateModeActive: false },
     })),
 
   // Bật chế độ mô phỏng ('STEP_SIMULATION') luôn reset về bước 0 (container trống) — điểm bắt

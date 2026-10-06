@@ -16,8 +16,7 @@ chạy ngay trên trình duyệt.
   buộc (va chạm, tải trọng, support ratio...) ngay khi thả tay.
 - **Thống kê & cảnh báo**: % lấp đầy thể tích/tải trọng, danh sách hàng không xếp vừa kèm lý do,
   cảnh báo lệch trọng tâm (stability heuristic hình học — không mô phỏng lực phanh/rung/ma sát).
-- **Chi phí vận chuyển**: nhập quãng đường + đơn giá cước để ước tính chi phí, gợi ý đổi sang loại
-  xe nhỏ hơn/rẻ hơn nếu container cuối cùng đang lấp đầy quá ít.
+- **Gợi ý đổi xe**: đề xuất loại xe/container có lòng nhỏ hơn nếu container cuối cùng đang lấp đầy quá ít.
 - **"Chuyến hàng của bạn"**: lưu kế hoạch chuyến (điểm giao, gán hàng theo điểm giao) và dữ liệu
   thực tế sau khi giao, tự động lưu vào trình duyệt (localStorage), xuất/nhập file JSON để sao
   lưu/chuyển máy khác.

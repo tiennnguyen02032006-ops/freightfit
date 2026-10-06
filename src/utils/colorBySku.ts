@@ -1,4 +1,4 @@
-function hslToHex(h: number, s: number, l: number): string {
+export function hslToHex(h: number, s: number, l: number): string {
   const sat = s / 100;
   const light = l / 100;
   const c = (1 - Math.abs(2 * light - 1)) * sat;

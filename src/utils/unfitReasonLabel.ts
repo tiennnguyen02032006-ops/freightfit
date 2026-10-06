@@ -7,6 +7,7 @@ const LABELS: Record<UnfitReason, string> = {
   OVERWEIGHT: 'Vượt tải trọng cho phép của container',
   ROTATION_CONFLICT: 'Không có hướng xoay nào vừa với kích thước container',
   STACK_CONFLICT: 'Vi phạm giới hạn xếp chồng (stacking)',
+  TEMPERATURE_MISMATCH: 'Hàng lạnh cần container lạnh — container đã chọn không phải container lạnh',
 };
 
 export function unfitReasonLabel(reason: UnfitReason): string {

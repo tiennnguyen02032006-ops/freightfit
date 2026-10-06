@@ -1,5 +1,7 @@
 import type {
   CargoTemplate,
+  SegregationRule,
+  ToleranceSettings,
   CenterOfGravityWarning,
   ContainerInstance,
   ContainerTemplate,
@@ -8,7 +10,12 @@ import type {
   VehiclePlan,
 } from '../../domain/types';
 import { PLACEMENT_SCORE_WEIGHTS } from '../config';
-import { expandCargoQuantity, type ExpandedCargoItem } from '../preprocessing/normalizeCargo';
+import type { ExpandedCargoItem } from '../preprocessing/normalizeCargo';
+import { expandCargoWithPallets } from '../palletizing/palletBlock';
+import { planPalletLayout } from '../palletizing/palletLayout';
+import { describeTolerance, wallMarginOf } from '../tolerance';
+import { buildSegregationPlan, partitionCompatibleSets, type CompatibleSet } from '../segregation';
+import { describeReeferContainer, formatTemperature, isColdCargo, isReefer, packableContainer, reeferTolerance, withAirGap } from '../reefer';
 import { sortCargo } from '../preprocessing/sortCargo';
 import { packContainer } from '../packing/packContainer';
 import { computeCgWarnings } from './centerOfGravity';
@@ -46,18 +53,47 @@ const MAX_CONTAINERS = 50;
  *    bao nhiêu container" (yêu cầu chính của tính năng), không cần tính trước bằng công thức ước
  *    lượng thể tích/trọng lượng (vốn không chính xác vì bỏ qua hình học xếp thật).
  */
-export function generateSolution(cargoTemplates: CargoTemplate[], containerTemplate: ContainerTemplate): PackingSolution {
-  const expanded = expandCargoQuantity(cargoTemplates);
-  const sortedItems = sortCargo(expanded);
+interface PackedSet {
+  containers: ContainerInstance[];
+  cgWarnings: CenterOfGravityWarning[];
+  unfit: UnfitCargo[];
+  layoutWarnings: string[];
+}
+
+/**
+ * Xếp 1 BỘ hàng tương thích (xem engine/segregation.ts) vào các container riêng của bộ đó, theo đúng cách mô tả ở trên.
+ * `indexOffset` = số container đã dùng cho các bộ trước (để đánh số container-N liên tục và không trùng id);
+ * `keepEmptyFirst` chỉ true cho bộ đầu tiên (giữ 1 container dù trống để UI luôn có container để hiển thị).
+ */
+function packSet(
+  setTemplates: CargoTemplate[],
+  containerTemplate: ContainerTemplate,
+  tolerance: ToleranceSettings | undefined,
+  indexOffset: number,
+  keepEmptyFirst: boolean,
+): PackedSet {
+  // Dung sai (nếu bật): cộng vào clearance của từng loại hàng, khe giữa các pallet và với vách container, số thùng
+  // mỗi lớp trên pallet — xem engine/tolerance.ts. Không truyền = không dung sai.
+  const wallMargin = wallMarginOf(tolerance);
+  // Template bật "Xếp lên pallet" nở thành từng pallet (khối cứng); thùng không lên pallet được
+  // (quá khổ/quá nặng so với pallet) đi thẳng vào danh sách không xếp vừa.
+  const { items: expanded, unpalletized } = expandCargoWithPallets(setTemplates, tolerance);
+  // Pallet: khoá chung 1 hướng tốt nhất (bố cục hàng thẳng, sát nhau) cho cả lô — xem palletLayout.ts.
+  const { items: sortedItems, warnings: layoutWarnings } = planPalletLayout(sortCargo(expanded), containerTemplate, undefined, { wallMargin });
   const itemsByInstanceId = new Map(sortedItems.map((item) => [item.cargoInstanceId, item] as const));
 
   const containers: ContainerInstance[] = [];
   let cgWarnings: CenterOfGravityWarning[] = [];
   let remaining: ExpandedCargoItem[] = sortedItems;
   let finalUnfit: UnfitCargo[] = [];
+  // Mục không xếp vừa là pallet thì ghi số thùng thật của nó (thống kê theo thùng).
+  const withBoxCount = (u: UnfitCargo): UnfitCargo => {
+    const boxCount = itemsByInstanceId.get(u.cargoInstanceId)?.palletLoad?.boxCount;
+    return boxCount === undefined ? u : { ...u, boxCount };
+  };
 
   do {
-    const containerIndex = containers.length;
+    const containerIndex = indexOffset + containers.length;
     const containerInstanceId = `container-${containerIndex + 1}`;
 
     const { container, unfit } = packContainer({
@@ -65,14 +101,14 @@ export function generateSolution(cargoTemplates: CargoTemplate[], containerTempl
       containerInstanceId,
       containerIndex,
       sortedItems: remaining,
+      wallMargin,
       weights: PLACEMENT_SCORE_WEIGHTS,
     });
 
     const madeProgress = container.placements.length > 0;
-    // Luôn giữ lại container ĐẦU TIÊN dù trống (vd không có hàng nào cả, hoặc không món nào xếp
-    // vừa dù chỉ 1 container) để UI vẫn có đúng 1 container để hiển thị — từ container thứ 2 trở
-    // đi, 1 container trống hoàn toàn không mang lại giá trị gì, không đưa vào kết quả.
-    if (madeProgress || containerIndex === 0) {
+    // Luôn giữ lại container ĐẦU TIÊN của cả phương án dù trống (vd không có hàng nào cả, hoặc không món nào xếp vừa dù
+    // chỉ 1 container) để UI vẫn có đúng 1 container để hiển thị — các container trống khác không đưa vào kết quả.
+    if (madeProgress || (containers.length === 0 && keepEmptyFirst)) {
       containers.push(container);
       cgWarnings = cgWarnings.concat(
         computeCgWarnings(containerInstanceId, {
@@ -86,7 +122,7 @@ export function generateSolution(cargoTemplates: CargoTemplate[], containerTempl
       // Dùng thẳng `unfit` (đã có sẵn `reason` cụ thể từ packContainer() — vd 'ROTATION_CONFLICT'
       // nếu quá khổ, 'OVERWEIGHT' nếu quá nặng) thay vì remap qua ExpandedCargoItem rồi mất field
       // `reason`.
-      finalUnfit = unfit;
+      finalUnfit = unfit.map(withBoxCount);
       remaining = [];
       break;
     }
@@ -102,7 +138,97 @@ export function generateSolution(cargoTemplates: CargoTemplate[], containerTempl
       cargoInstanceId: item.cargoInstanceId,
       cargoTemplateId: item.cargoTemplateId,
       reason: 'NO_SPACE' as const,
+      ...(item.palletLoad ? { boxCount: item.palletLoad.boxCount } : {}),
     }));
+  }
+
+  return { containers, cgWarnings, unfit: finalUnfit.concat(unpalletized), layoutWarnings };
+}
+
+type PlannedSet = CompatibleSet & { temperatureC?: number; destinationPort?: string };
+
+const portKeyOf = (t: CargoTemplate): string => (t.destinationPort ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+/**
+ * Chia lô hàng thành các bộ xếp riêng: trước hết theo CẢNG ĐÍCH (hàng khác cảng đích không bao giờ chung container; hàng
+ * chưa ghi cảng đích là 1 nhóm riêng khi lô có ghi cảng), rồi theo NHIỆT ĐỘ CÀI ĐẶT (hàng khác nhiệt độ, kể cả hàng không
+ * đặt nhiệt độ, không chung container), rồi trong mỗi nhóm theo quy tắc tách nhóm hàng (engine/segregation.ts).
+ */
+function partitionSets(cargoTemplates: CargoTemplate[], rules: SegregationRule[]): PlannedSet[] {
+  const portKeys: string[] = [];
+  for (const t of cargoTemplates) if (!portKeys.includes(portKeyOf(t))) portKeys.push(portKeyOf(t));
+  const sets: PlannedSet[] = [];
+  for (const portKey of portKeys) {
+    const inPort = cargoTemplates.filter((t) => portKeyOf(t) === portKey);
+    const destinationPort = portKey === '' ? undefined : (inPort[0].destinationPort ?? '').trim();
+    const temps = Array.from(new Set(inPort.filter(isColdCargo).map((t) => t.setTemperatureC as number))).sort((a, b) => a - b);
+    const buckets: Array<number | undefined> = [undefined, ...temps];
+    for (const temperatureC of buckets) {
+      const subset = inPort.filter((t) => (temperatureC === undefined ? !isColdCargo(t) : t.setTemperatureC === temperatureC));
+      if (subset.length === 0) continue;
+      for (const set of partitionCompatibleSets(subset, rules)) {
+        sets.push({ ...set, ...(temperatureC !== undefined ? { temperatureC } : {}), ...(destinationPort ? { destinationPort } : {}) });
+      }
+    }
+  }
+  return sets;
+}
+
+/**
+ * Sinh 1 PackingSolution. Trước hết CHIA lô hàng thành các bộ tương thích: hàng khác cảng đích hoặc khác nhiệt độ cài đặt không chung container,
+ * và hai nhóm hàng có quy tắc xung đột (`segregationRules`, xem engine/segregation.ts) cũng thuộc 2 bộ khác nhau; mỗi bộ được
+ * xếp riêng (mô tả chi tiết ở trên) vào các container của riêng nó. Container lạnh: lòng xe bị hạ xuống vạch giới hạn chiều
+ * cao xếp và mọi hàng được chừa khe luồng khí (engine/reefer.ts); hàng lạnh vào container thường -> không xếp được
+ * (TEMPERATURE_MISMATCH). Không có gì cần tách -> đúng 1 bộ, hành vi như trước.
+ */
+export function generateSolution(
+  cargoTemplates: CargoTemplate[],
+  containerTemplate: ContainerTemplate,
+  tolerance?: ToleranceSettings,
+  segregationRules: SegregationRule[] = [],
+): PackingSolution {
+  const sets = partitionSets(cargoTemplates, segregationRules);
+  const groups: PlannedSet[] = sets.length > 0 ? sets : [{ groupKeys: [], templateIds: [] }];
+
+  const reefer = isReefer(containerTemplate);
+  const packTemplate = packableContainer(containerTemplate);
+  const packTolerance = reefer ? reeferTolerance(tolerance) : tolerance;
+
+  const containers: ContainerInstance[] = [];
+  let cgWarnings: CenterOfGravityWarning[] = [];
+  let finalUnfit: UnfitCargo[] = [];
+  const layoutWarnings: string[] = [];
+  const containerIdsBySet: string[][] = [];
+
+  groups.forEach((set, i) => {
+    let setTemplates = cargoTemplates.filter((t) => set.templateIds.includes(t.id));
+    if (set.temperatureC !== undefined && !reefer) {
+      // Hàng lạnh không được xếp vào container thường.
+      const { items, unpalletized } = expandCargoWithPallets(setTemplates, packTolerance);
+      finalUnfit = finalUnfit.concat(
+        items.map((item) => ({
+          cargoInstanceId: item.cargoInstanceId,
+          cargoTemplateId: item.cargoTemplateId,
+          reason: 'TEMPERATURE_MISMATCH' as const,
+          ...(item.palletLoad ? { boxCount: item.palletLoad.boxCount } : {}),
+        })),
+        unpalletized,
+      );
+      containerIdsBySet.push([]);
+      return;
+    }
+    if (reefer) setTemplates = withAirGap(setTemplates, tolerance);
+    const packed = packSet(setTemplates, packTemplate, packTolerance, containers.length, i === 0);
+    containerIdsBySet.push(packed.containers.map((c) => c.id));
+    containers.push(...packed.containers);
+    cgWarnings = cgWarnings.concat(packed.cgWarnings);
+    finalUnfit = finalUnfit.concat(packed.unfit);
+    for (const w of packed.layoutWarnings) if (!layoutWarnings.includes(w)) layoutWarnings.push(w);
+  });
+
+  if (containers.length === 0) {
+    // Mọi bộ đều không xếp được (vd chỉ có hàng lạnh mà container không phải container lạnh): vẫn giữ 1 container trống để hiển thị.
+    containers.push(...packSet([], packTemplate, packTolerance, 0, true).containers);
   }
 
   const templatesById = new Map([[containerTemplate.id, containerTemplate]]);
@@ -111,9 +237,50 @@ export function generateSolution(cargoTemplates: CargoTemplate[], containerTempl
   const vehiclePlan: VehiclePlan = {
     id: 'plan-1',
     items: [{ containerTemplateId: containerTemplate.id, quantity: containers.length }],
-    totalCost: stats.totalCost,
     feasible: finalUnfit.length === 0,
   };
+
+  const segregation = buildSegregationPlan(sets, cargoTemplates, segregationRules, containerIdsBySet);
+  segregation.sets.forEach((s, i) => {
+    const { temperatureC, destinationPort } = groups[i];
+    if (temperatureC !== undefined) s.temperatureC = temperatureC;
+    if (destinationPort) s.destinationPort = destinationPort;
+    if (s.containerIds.length === 0) return;
+    const notes: string[] = [];
+    if (destinationPort) notes.push(`Cảng đích: ${destinationPort}`);
+    const customers = Array.from(
+      new Set(cargoTemplates.filter((t) => groups[i].templateIds.includes(t.id)).map((t) => (t.customer ?? '').trim()).filter((c) => c !== '')),
+    );
+    if (customers.length > 0) {
+      notes.push(`Khách hàng: ${customers.join(', ')}${customers.length > 1 ? ' — mỗi khách hàng nằm trên các pallet riêng, pallet cùng khách đặt liền nhau' : ''}`);
+    }
+    if (reefer) notes.push(...describeReeferContainer(containerTemplate, temperatureC));
+    if (notes.length > 0) s.containerNotes = notes;
+  });
+
+  // Lý do tách theo cảng đích: liệt kê các cảng đích đang có trong lô.
+  const portLabels = Array.from(new Set(cargoTemplates.map(portKeyOf)));
+  if (portLabels.length > 1) {
+    const parts = portLabels.map((key) => {
+      const inPort = cargoTemplates.filter((t) => portKeyOf(t) === key);
+      return `${key === '' ? 'chưa ghi cảng đích' : (inPort[0].destinationPort ?? '').trim()} (${inPort.map((t) => t.sku).join(', ')})`;
+    });
+    segregation.reasons.push(`Hàng khác cảng đích không được chung container — xếp riêng: ${parts.join('; ')}`);
+  }
+
+  // Lý do tách theo nhiệt độ: liệt kê các nhiệt độ cài đặt đang có trong lô.
+  const bucketSkus = (temperatureC: number | undefined) =>
+    cargoTemplates.filter((t) => (temperatureC === undefined ? !isColdCargo(t) : t.setTemperatureC === temperatureC)).map((t) => t.sku);
+  const temps = Array.from(new Set(cargoTemplates.filter(isColdCargo).map((t) => t.setTemperatureC as number))).sort((a, b) => a - b);
+  if (temps.length > 0 && (temps.length > 1 || cargoTemplates.some((t) => !isColdCargo(t)))) {
+    const parts = temps.map((c) => `${formatTemperature(c)} (${bucketSkus(c).join(', ')})`);
+    if (cargoTemplates.some((t) => !isColdCargo(t))) parts.push(`không đặt nhiệt độ (${bucketSkus(undefined).join(', ')})`);
+    segregation.reasons.push(`Hàng khác nhiệt độ cài đặt không được chung container lạnh — xếp riêng: ${parts.join('; ')}`);
+  }
+  if (temps.length > 0 && !reefer) {
+    const cold = cargoTemplates.filter(isColdCargo).map((t) => t.sku);
+    segregation.reasons.push(`Hàng lạnh (${cold.join(', ')}) cần container lạnh — container đã chọn không phải container lạnh nên không xếp được`);
+  }
 
   return {
     id: 'solution-1',
@@ -123,5 +290,8 @@ export function generateSolution(cargoTemplates: CargoTemplate[], containerTempl
     cgWarnings,
     loadingSteps: [],
     stats,
+    layoutWarnings,
+    toleranceNotes: describeTolerance(cargoTemplates, tolerance),
+    segregation,
   };
 }

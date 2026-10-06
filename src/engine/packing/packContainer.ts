@@ -16,6 +16,7 @@ import {
   findSupportingPlacements,
   meetsMinSupportRatio,
 } from '../constraints/support';
+import { palletTemplateKey } from '../constraints/templateKey';
 import { addExtremePoints, createInitialExtremePoints, fitsInsideContainer, generateNewExtremePoints, removeExtremePoint } from './extremePoints';
 import { computeContactRatio, placementScore } from './placementScoring';
 import { determineUnfitReason } from './unfitReason';
@@ -29,6 +30,9 @@ export interface PackContainerParams {
   sortedItems: ExpandedCargoItem[];
   weights: PlacementScoreWeights;
   minSupportRatio?: number;
+  // Lề chừa mỗi bên vách container (mm) — dung sai khe pallet/hàng với vách (xem engine/tolerance.ts wallMarginOf).
+  // Vùng xếp thu nhỏ còn (rộng - 2 x lề) x (dài - 2 x lề); toạ độ trả ra đã dịch lại đúng vị trí thật trong container.
+  wallMargin?: number;
 }
 
 export interface PackContainerResult {
@@ -94,9 +98,17 @@ export function packContainer(params: PackContainerParams): PackContainerResult 
     minSupportRatio = MIN_SUPPORT_RATIO,
   } = params;
 
+  const margin = params.wallMargin && params.wallMargin > 0 ? params.wallMargin : 0;
+  // Vùng xếp thật sự dùng khi kiểm tra vừa/ra ngoài container (đã trừ lề hai bên vách).
+  const usable: ContainerTemplate =
+    margin > 0
+      ? { ...containerTemplate, innerLength: containerTemplate.innerLength - 2 * margin, innerWidth: containerTemplate.innerWidth - 2 * margin }
+      : containerTemplate;
+
   const templatesById = new Map<string, CargoTemplate>();
   for (const item of sortedItems) {
-    templatesById.set(item.cargoTemplateId, item.template);
+    // Pallet (khối cứng) và thùng rời cùng SKU có template khác nhau -> khoá riêng (xem templateKey.ts).
+    templatesById.set(item.palletLoad ? palletTemplateKey(item.cargoTemplateId) : item.cargoTemplateId, item.template);
   }
 
   // === Khung tọa độ x dùng NỘI BỘ trong vòng lặp bên dưới ===
@@ -131,6 +143,9 @@ export function packContainer(params: PackContainerParams): PackContainerResult 
   // Lý do rớt GẦN NHẤT (cập nhật lại mỗi lần tryPlaceItem thất bại cho item đó) — dùng khi vòng
   // lặp thử lại cuối cùng bỏ cuộc hẳn với 1 item, xem tryPlaceItem/vòng lặp thử lại bên dưới.
   const lastUnfitReasonByInstanceId = new Map<string, UnfitCargo>();
+  // Pallet xếp theo bố cục hai cột (palletSlotPad): bề rộng khi xếp đã cộng thêm nửa khe giữa; sau khi xếp xong
+  // phải trả lại bề rộng thật và dịch pallet cột phải sát vách (xem đoạn "Quy đổi" ở cuối).
+  const slotPadByPlacementId = new Map<string, number>();
 
   /**
    * Thử đặt 1 kiện hàng vào vị trí tốt nhất trong số extremePoints HIỆN TẠI (đọc/ghi trực tiếp
@@ -150,9 +165,9 @@ export function packContainer(params: PackContainerParams): PackContainerResult 
     template.allowedOrientations.forEach(([l, w, h], orientationIndex) => {
       const fitDims = applyClearance({ length: l, width: w, height: h }, template.clearance);
       const orientationFitsContainer =
-        fitDims.length <= containerTemplate.innerLength &&
-        fitDims.width <= containerTemplate.innerWidth &&
-        fitDims.height <= containerTemplate.innerHeight;
+        fitDims.length <= usable.innerLength &&
+        fitDims.width <= usable.innerWidth &&
+        fitDims.height <= usable.innerHeight;
       if (orientationFitsContainer) anyOrientationFitsContainer = true;
 
       extremePoints.forEach((point, pointIndex) => {
@@ -165,7 +180,7 @@ export function packContainer(params: PackContainerParams): PackContainerResult 
           height: fitDims.height,
         };
 
-        if (!fitsInsideContainer(candidateBox, containerTemplate)) return;
+        if (!fitsInsideContainer(candidateBox, usable)) return;
         if (hasCollision(candidateBox, placements)) return;
 
         hadAnyFitCandidate = true;
@@ -259,8 +274,12 @@ export function packContainer(params: PackContainerParams): PackContainerResult 
       supportRatio: chosen.supportRatio,
       supportedByPlacementIds: chosen.supportingPlacements.map((p) => p.id),
       stackLevel: chosen.stackLevel,
+      // Pallet là khối cứng: giữ nguyên vị trí từng thùng (cục bộ theo pallet) để hiển thị/thống kê.
+      ...(item.palletLoad ? { palletLoad: item.palletLoad } : {}),
+      ...(item.palletLeftover ? { palletLeftover: true } : {}),
     };
 
+    if (item.palletSlotPad) slotPadByPlacementId.set(placement.id, item.palletSlotPad);
     placements.push(placement);
     totalWeight += template.weight;
     usedVolume += l * w * h;
@@ -319,10 +338,27 @@ export function packContainer(params: PackContainerParams): PackContainerResult 
   // trong app (rendering, revalidate...) đều hiểu x theo khoảng cách tới cửa (x=0 = cửa) như quy
   // ước gốc.
   for (const p of placements) {
-    const realX = containerTemplate.innerLength - p.x - p.length;
-    const realCenterX = containerTemplate.innerLength - p.centerX;
+    // vùng xếp bắt đầu cách vách `margin` -> x thật = (dài vùng xếp + lề) - x nội bộ - dài kiện
+    const realX = usable.innerLength + margin - p.x - p.length;
+    const realCenterX = usable.innerLength + margin - p.centerX;
     p.x = realX;
     p.centerX = realCenterX;
+
+    // Bố cục hai cột: trả lại bề rộng thật; cột trái giữ sát vách trái (y = 0), cột phải dịch sát vách phải —
+    // phần dư giữa hai cột thành khe giữa (chỗ chèn túi khí).
+    const pad = slotPadByPlacementId.get(p.id);
+    if (pad) {
+      const inRightColumn = p.y + p.width / 2 > usable.innerWidth / 2;
+      if (inRightColumn) p.y += pad;
+      p.width -= pad;
+      p.centerY = p.y + p.width / 2;
+      usedVolume -= pad * p.length * p.height;
+    }
+    // Dịch theo lề vách trái (y = 0 của vùng xếp cách vách `margin`).
+    if (margin > 0) {
+      p.y += margin;
+      p.centerY += margin;
+    }
   }
 
   const centerOfGravity = computeCenterOfGravity(placements);

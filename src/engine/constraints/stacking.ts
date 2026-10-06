@@ -1,4 +1,5 @@
 import type { CargoTemplate, Placement } from '../../domain/types';
+import { templateKeyOf } from './templateKey';
 
 /**
  * Mỗi item support bên dưới phải stackable=true, KHÔNG được đánh dấu fragile (hàng dễ vỡ
@@ -11,7 +12,7 @@ export function respectsStacking(
   newStackLevel: number,
 ): boolean {
   return belowPlacements.every((p) => {
-    const template = belowTemplates.get(p.cargoTemplateId);
+    const template = belowTemplates.get(templateKeyOf(p));
     if (!template) return false;
     if (template.fragile) return false;
     if (!template.stackable) return false;

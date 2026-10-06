@@ -2,12 +2,6 @@ import type { ContainerTemplate } from '../../domain/types';
 
 // Kích thước lòng trong (mm) và maxPayload (kg) theo số liệu ISO container phổ biến.
 // Giả định cần xác nhận lại với số liệu thực tế của công ty trước khi dùng cho production.
-//
-// costPerKm/costPerTrip: đơn giá cước (VNĐ/km) và giá thuê/vận chuyển 1 container (VNĐ/container)
-// dùng cho TransportCostPanel — mức giá THAM KHẢO theo mặt bằng vận tải đường bộ Việt Nam (xe đầu
-// kéo chở container nội địa, giá dao động theo tuyến/hãng/thời điểm), CẦN XÁC NHẬN LẠI với đơn giá
-// thực tế của công ty trước khi dùng để báo giá chính thức. Container lớn/lạnh thì cả 2 mức đều
-// cao hơn (xe kéo nặng hơn, tốn nhiên liệu hơn, phí thuê thiết bị lạnh cao hơn).
 export const STANDARD_CONTAINER_TEMPLATES: ContainerTemplate[] = [
   {
     id: 'std-20ft',
@@ -21,8 +15,6 @@ export const STANDARD_CONTAINER_TEMPLATES: ContainerTemplate[] = [
     maxPayload: 28280,
     doorWidth: 2340,
     doorHeight: 2280,
-    costPerKm: 17000,
-    costPerTrip: 800000,
     isCustom: false,
   },
   {
@@ -36,8 +28,9 @@ export const STANDARD_CONTAINER_TEMPLATES: ContainerTemplate[] = [
     // toàn (không claim payload cao hơn thực tế cho phép).
     maxPayload: 21000,
     notes: 'Nhiệt độ tối thiểu: -25°C',
-    costPerKm: 27000,
-    costPerTrip: 1300000,
+    refrigerated: true,
+    // Vạch giới hạn xếp (red line) thấp hơn lòng xe; số liệu giả định, đối chiếu thông số thiết bị thực tế.
+    maxStackHeight: 2150,
     isCustom: false,
   },
   {
@@ -50,8 +43,6 @@ export const STANDARD_CONTAINER_TEMPLATES: ContainerTemplate[] = [
     tareWeight: 2420,
     grossWeight: 30480,
     maxPayload: 28060,
-    costPerKm: 18000,
-    costPerTrip: 850000,
     isCustom: false,
   },
   {
@@ -64,8 +55,6 @@ export const STANDARD_CONTAINER_TEMPLATES: ContainerTemplate[] = [
     tareWeight: 3700,
     grossWeight: 32500,
     maxPayload: 28800,
-    costPerKm: 22000,
-    costPerTrip: 1000000,
     isCustom: false,
   },
   {
@@ -82,8 +71,6 @@ export const STANDARD_CONTAINER_TEMPLATES: ContainerTemplate[] = [
     tareWeight: 3940,
     grossWeight: 32500,
     maxPayload: 26500,
-    costPerKm: 23000,
-    costPerTrip: 1050000,
     isCustom: false,
   },
   {
@@ -95,8 +82,8 @@ export const STANDARD_CONTAINER_TEMPLATES: ContainerTemplate[] = [
     innerHeight: 2225,
     maxPayload: 28000,
     notes: 'Container lạnh, dùng cho hàng đông lạnh/hàng lạnh khối lượng lớn',
-    costPerKm: 30000,
-    costPerTrip: 1500000,
+    refrigerated: true,
+    maxStackHeight: 2130,
     isCustom: false,
   },
   {
@@ -113,8 +100,6 @@ export const STANDARD_CONTAINER_TEMPLATES: ContainerTemplate[] = [
     tareWeight: 4800,
     grossWeight: 32500,
     maxPayload: 25680,
-    costPerKm: 25000,
-    costPerTrip: 1100000,
     isCustom: false,
   },
   {
@@ -125,8 +110,6 @@ export const STANDARD_CONTAINER_TEMPLATES: ContainerTemplate[] = [
     innerWidth: 1620,
     innerHeight: 1820,
     maxPayload: 1200,
-    costPerKm: 13000,
-    costPerTrip: 350000,
     isCustom: false,
   },
   {
@@ -137,8 +120,6 @@ export const STANDARD_CONTAINER_TEMPLATES: ContainerTemplate[] = [
     innerWidth: 1780,
     innerHeight: 1660,
     maxPayload: 2150,
-    costPerKm: 15000,
-    costPerTrip: 450000,
     isCustom: false,
   },
   {
@@ -149,8 +130,6 @@ export const STANDARD_CONTAINER_TEMPLATES: ContainerTemplate[] = [
     innerWidth: 2135,
     innerHeight: 1900,
     maxPayload: 3490,
-    costPerKm: 17000,
-    costPerTrip: 575000,
     isCustom: false,
   },
   {
@@ -163,8 +142,6 @@ export const STANDARD_CONTAINER_TEMPLATES: ContainerTemplate[] = [
     // maxPayload lấy theo tên dòng xe "5,5 tấn", chưa có số tải trọng chính xác hơn (theo giấy
     // đăng kiểm) — cần xác nhận lại trước khi dùng cho production.
     maxPayload: 5500,
-    costPerKm: 18500,
-    costPerTrip: 875000,
     isCustom: false,
   },
   {
@@ -175,8 +152,6 @@ export const STANDARD_CONTAINER_TEMPLATES: ContainerTemplate[] = [
     innerWidth: 2050,
     innerHeight: 1870,
     maxPayload: 7300,
-    costPerKm: 22000,
-    costPerTrip: 1150000,
     isCustom: false,
   },
 ];
