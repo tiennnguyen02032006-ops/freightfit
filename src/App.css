@@ -2073,3 +2073,365 @@ button.primary:hover:not(:disabled) {
 .segregation-add {
   margin-bottom: 8px;
 }
+
+/* ---------- Red Team (RedTeamPanel.tsx) — mô phỏng theo luật, số liệu giả định ---------- */
+
+.result-btn.is-active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.redteam-panel {
+  flex: 0 0 auto;
+  max-height: 52%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.redteam-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-h);
+}
+
+.redteam-disclaimer {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--accent-bg);
+  color: var(--text-h);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.redteam-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.redteam-section h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.redteam-hint,
+.redteam-summary {
+  margin: 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.redteam-note {
+  color: var(--text);
+  opacity: 0.8;
+}
+
+.redteam-stops,
+.redteam-incidents,
+.redteam-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.redteam-stop,
+.redteam-incident {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.redteam-stop-no {
+  align-self: center;
+  min-width: 18px;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.redteam-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 11.5px;
+}
+
+.redteam-field-wide {
+  flex: 1 1 160px;
+}
+
+/* Trực tiếp trong cột (section) thì flex-basis là CHIỀU CAO — không để ô rộng bị kéo cao */
+.redteam-section > .redteam-field-wide {
+  flex: 0 0 auto;
+}
+
+.redteam-explain li.is-cause {
+  list-style: circle;
+  margin-left: 16px;
+}
+
+.redteam-field select,
+.redteam-field > input {
+  min-width: 0;
+  padding: 3px 6px;
+}
+
+.redteam-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.redteam-input input {
+  width: 72px;
+  min-width: 0;
+  padding: 3px 6px;
+}
+
+.redteam-input em {
+  font-style: normal;
+  opacity: 0.7;
+}
+
+.redteam-move {
+  display: inline-flex;
+  gap: 4px;
+  align-self: center;
+}
+
+.redteam-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.redteam-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 220px;
+  color: var(--text-h);
+  overflow-wrap: anywhere;
+}
+
+.redteam-incident-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.redteam-table-wrap {
+  overflow-x: auto;
+}
+
+.redteam-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.redteam-table th,
+.redteam-table td {
+  padding: 4px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.redteam-table th {
+  color: var(--text-h);
+  white-space: nowrap;
+}
+
+/* Biểu đồ thời gian: mỗi điểm giao 1 hàng, thanh nằm trên trục phút chung */
+.redteam-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.redteam-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 160px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.redteam-row-label,
+.redteam-row-value {
+  overflow-wrap: anywhere;
+}
+
+.redteam-row-value {
+  min-width: 64px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.redteam-row.is-late .redteam-row-value {
+  color: #d92d20;
+  font-weight: 700;
+}
+
+.redteam-track {
+  position: relative;
+  height: 16px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.redteam-bar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 3px;
+}
+
+.redteam-travel {
+  background: #9aa0a6;
+}
+
+.redteam-unload {
+  background: var(--accent);
+}
+
+.redteam-rehandle {
+  background: #ef4444;
+}
+
+.redteam-deadline {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--text-h);
+}
+
+.redteam-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 11px;
+}
+
+.redteam-legend i {
+  display: inline-block;
+  width: 12px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 2px;
+}
+
+.redteam-legend .redteam-deadline-swatch {
+  width: 2px;
+  height: 12px;
+  background: var(--text-h);
+}
+
+.redteam-explain {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.redteam-option {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.redteam-option.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.redteam-option-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.redteam-option-title em {
+  font-style: normal;
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+}
+
+.redteam-option-detail,
+.redteam-option-score {
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.redteam-option-score {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.redteam-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin: 0 2px 0 4px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+.redteam-dot-blocked {
+  background: #f59e0b;
+}
+
+.redteam-dot-blocker {
+  background: #ef4444;
+}
+
+.redteam-dot-moved {
+  background: #3b82f6;
+}
+
+@container result (max-width: 560px) {
+  .redteam-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .redteam-row .redteam-track {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+}

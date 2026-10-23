@@ -25,6 +25,7 @@ import { ContainerTabsBar } from './ContainerTabsBar';
 import { groupLabel, segregationNotesFor } from '../../engine/segregation';
 import { formatTemperature, stackHeightLimit } from '../../engine/reefer';
 import { HeightLimitLine } from './HeightLimitLine';
+import { RedTeamPanel } from './RedTeamPanel';
 import { NO_CUSTOMER_LABEL, displayColor, normalizeCustomer, type ColorMode } from '../../utils/customerColor';
 import { downloadPackingSolutionPdf, type ContainerReportInput } from '../../export/exportPdf';
 
@@ -165,6 +166,16 @@ export function ContainerScene() {
   const templatesById = useMemo(() => new Map(cargoTemplates.map((t) => [t.id, t])), [cargoTemplates]);
   // Cách tô màu hàng: mặc định theo khách hàng (mỗi khách 1 màu cố định), bật lại được màu theo SKU. Chỉ đổi màu VẼ.
   const [colorMode, setColorMode] = useState<ColorMode>('customer');
+  // Bảng Red Team (RedTeamPanel.tsx) và pallet đang được tô sáng theo phương án cứu đã chọn.
+  const [redTeamOpen, setRedTeamOpen] = useState(false);
+  const redTeamHighlight = useAppStore((s) => s.redTeamHighlight);
+  const redTeamMarkOf = (placementId: string): 'blocked' | 'blocker' | 'moved' | undefined => {
+    if (!redTeamOpen || !redTeamHighlight) return undefined;
+    if (redTeamHighlight.moved.includes(placementId)) return 'moved';
+    if (redTeamHighlight.blockers.includes(placementId)) return 'blocker';
+    if (redTeamHighlight.blocked.includes(placementId)) return 'blocked';
+    return undefined;
+  };
   const displayTemplatesById = useMemo(
     () => new Map(cargoTemplates.map((t) => [t.id, { ...t, color: displayColor(t, colorMode) }])),
     [cargoTemplates, colorMode],
@@ -431,6 +442,9 @@ export function ContainerScene() {
         canExportPdf={!!solution}
         isExportingPdf={isExportingPdf}
         onExportPdf={handleExportPdf}
+        canRedTeam={!!solution}
+        redTeamOpen={redTeamOpen}
+        onToggleRedTeam={() => setRedTeamOpen((open) => !open)}
       />
       <ResultMetricsRow
         metrics={metrics}
@@ -556,6 +570,7 @@ export function ContainerScene() {
               template={displayTemplatesById.get(placement.cargoTemplateId)}
               selected={isSelected}
               highlighted={placement.id === highlightedPlacementId}
+              redTeamMark={redTeamMarkOf(placement.id)}
               faded={isFaded}
               onSelect={handleSelectPlacement}
               disableSelect={rotateModeActive}
@@ -614,6 +629,14 @@ export function ContainerScene() {
           onMaxPayloadChange={(kg) => setPayloadOverrides((prev) => ({ ...prev, [activeContainerTemplate.id]: kg }))}
         />
       </div>
+      {redTeamOpen && (
+        <RedTeamPanel
+          container={container}
+          templatesById={templatesById}
+          innerWidth={activeContainerTemplate.innerWidth}
+          onClose={() => setRedTeamOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -8,6 +8,8 @@ import { PalletBlock3D } from './PalletBlock3D';
 // Viền màu cam cho thùng THỪA xếp rời của SKU xếp pallet — phân biệt với hàng trên pallet (viền đen).
 const LEFTOVER_EDGE_COLOR = '#ff8a00';
 
+const RED_TEAM_MARK_COLORS = { blocked: '#f59e0b', blocker: '#ef4444', moved: '#3b82f6' } as const;
+
 interface CargoBox3DProps {
   placement: Placement;
   template: CargoTemplate | undefined;
@@ -19,6 +21,8 @@ interface CargoBox3DProps {
   // StepSimulationControls.tsx/ContainerScene.tsx) — viền + vật liệu phát sáng tạm thời, KHÁC với
   // `selected` (chọn tay để xem chi tiết, không tự tắt).
   highlighted?: boolean;
+  // Tô sáng theo bảng Red Team: bị chắn (cam) / đang chắn (đỏ) / cần đổi chỗ hoặc tách đơn (xanh dương).
+  redTeamMark?: 'blocked' | 'blocker' | 'moved';
   // Khi true, mesh được vẽ tại gốc tọa độ cục bộ [0,0,0] thay vì vị trí tuyệt đối tính từ
   // placement.x/y/z — dùng khi ContainerScene bọc kiện ĐANG CHỌN trong 1 <group> riêng do
   // DraggablePlacement điều khiển (kéo-thả), để group cha mang vị trí thật, tránh cộng dồn 2 lớp
@@ -61,6 +65,7 @@ export function CargoBox3D({
   selected,
   onSelect,
   highlighted = false,
+  redTeamMark,
   renderAtOrigin = false,
   disableSelect = false,
   previewTint,
@@ -88,14 +93,15 @@ export function CargoBox3D({
   const previewColor = previewTint === 'valid' ? '#22c55e' : previewTint === 'invalid' ? '#ef4444' : null;
   // faded: khung dây là thứ DUY NHẤT còn hiển thị nên viền rõ hơn; bỏ qua mọi trạng thái khác (selected/highlighted không có ý nghĩa khi
   // đã làm mờ để nhường chỗ quan sát loại khác).
+  const markColor = redTeamMark ? RED_TEAM_MARK_COLORS[redTeamMark] : null;
   const edgeColor = faded
     ? '#999999'
-    : (previewColor ?? (highlighted ? '#ffe066' : selected ? '#ffffff' : placement.palletLeftover ? LEFTOVER_EDGE_COLOR : '#1c1c1c'));
-  const edgeWidth = faded ? 1 : (previewTint ? 3 : highlighted ? 3.5 : selected ? 2.5 : placement.palletLeftover ? 2 : 1.25);
+    : (previewColor ?? markColor ?? (highlighted ? '#ffe066' : selected ? '#ffffff' : placement.palletLeftover ? LEFTOVER_EDGE_COLOR : '#1c1c1c'));
+  const edgeWidth = faded ? 1 : (previewTint ? 3 : markColor ? 4 : highlighted ? 3.5 : selected ? 2.5 : placement.palletLeftover ? 2 : 1.25);
   // Phát sáng nhẹ (emissive) khi highlighted — chỉ dùng cho hiệu ứng "vừa thêm vào" tạm thời của
   // simulation, tự tắt sau vài giây (xem ContainerScene.tsx), không phải trạng thái `selected`.
-  const emissive = previewColor ?? (highlighted ? '#ffe066' : '#000000');
-  const emissiveIntensity = previewTint ? 0.5 : highlighted ? 0.6 : 0;
+  const emissive = previewColor ?? markColor ?? (highlighted ? '#ffe066' : '#000000');
+  const emissiveIntensity = previewTint ? 0.5 : markColor ? 0.55 : highlighted ? 0.6 : 0;
 
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
     event.stopPropagation();

@@ -729,3 +729,144 @@ export type TripRouteResult =
       reason: string;       // lý do cụ thể phương án không tồn tại
       suggestion: string;   // gợi ý cách nới (xe lớn hơn / chấp nhận chắn ít kiện nhất) — CHỈ hiện gợi ý, không tự áp dụng
     };
+
+// ============================================================
+// 15. RED TEAM — mô phỏng theo LUẬT một chuyến giao nhiều điểm với số liệu GIẢ ĐỊNH (xem engine/redteam/)
+// ============================================================
+// Độc lập hoàn toàn với thuật toán xếp hàng: chỉ ĐỌC vị trí pallet đã xếp rồi thử các sự cố (chậm, xuất phát muộn, dỡ
+// chậm, đơn giao sớm) để tìm điểm giao gãy hạn và pallet bị chắn. Không phải dự báo thực tế.
+
+export type RedTeamLane = 'LEFT' | 'RIGHT';
+
+// 1 pallet (hoặc kiện rời) đã xếp, toạ độ thật trong container: x = chiều sâu tính từ CỬA (x = 0 là cửa), y = ngang.
+export interface RedTeamPallet {
+  id: string;            // = Placement.id (dùng để tô sáng trong khung 3D)
+  label: string;         // vd "SKU1 #3"
+  orderId: string;       // đơn/nhóm hàng — trùng RedTeamStop.id của điểm giao nhận nhóm này
+  lane: RedTeamLane;     // bên trái/phải khi nhìn từ cửa vào trong
+  x: number;
+  y: number;
+  z: number;
+  length: number;
+  width: number;
+  height: number;
+}
+
+// Điểm giao theo thứ tự KẾ HOẠCH (mỗi nhóm hàng giao ở đúng 1 điểm).
+export interface RedTeamStop {
+  id: string;
+  name: string;
+  legMinutes: number;     // phút lái từ điểm trước (điểm đầu: từ kho)
+  unloadMinutes: number;  // phút dỡ hàng của chính điểm này
+  deadlineMin: number;    // hạn giao: số phút sau giờ xuất phát kế hoạch (gồm cả dỡ hàng)
+}
+
+export interface RedTeamParams {
+  rehandleMinPerPallet: number;       // phút dỡ ra + xếp lại cho mỗi pallet bị chắn
+  extraUnloadMinPerPallet: number;    // phút dỡ thêm cho mỗi pallet của đơn giao sớm
+  departureAdvanceMin: number;        // xuất phát SỚM bao nhiêu phút so với kế hoạch (0 = đúng kế hoạch)
+}
+
+export interface RedTeamScenario {
+  stops: RedTeamStop[];
+  pallets: RedTeamPallet[];
+  params: RedTeamParams;
+}
+
+export type RedTeamIncident =
+  | { id: string; label: string; type: 'LATE_DEPART'; minutes: number }
+  | { id: string; label: string; type: 'DELAY'; minutes: number; leg: number }               // chậm ở chặng thứ `leg` (từ 1)
+  | { id: string; label: string; type: 'SLOW_UNLOAD'; percent: number }                      // dỡ hàng chậm thêm % ở mọi điểm
+  | { id: string; label: string; type: 'EXPEDITE'; orderId: string; atPosition: number };    // đơn giao sớm, dỡ cùng điểm thứ `atPosition`
+
+export interface RedTeamBlockLink {
+  blockedPalletId: string;
+  blockedOrderId: string;
+  blockerPalletId: string;
+  blockerOrderId: string;
+  kind: 'DOOR' | 'TOP';   // DOOR: nằm gần cửa hơn cùng làn; TOP: nằm đè lên trên
+  lane: RedTeamLane;
+}
+
+export interface RedTeamCause {
+  kind: 'LATE_DEPART' | 'DELAY' | 'SLOW_UNLOAD' | 'EXPEDITE' | 'REHANDLE';
+  minutes: number;
+  stopId?: string;
+  text: string;
+}
+
+export interface RedTeamOrderResult {
+  orderId: string;
+  deadlineMin: number;
+  lateness: number;       // phút trễ so với hạn (0 nếu kịp)
+}
+
+export interface RedTeamStopEvent {
+  stopId: string;
+  name: string;
+  position: number;        // thứ tự thực tế được phục vụ (từ 1)
+  plannedPosition: number; // thứ tự trong kế hoạch (từ 1)
+  arrival: number;         // phút
+  finish: number;          // phút, xong dỡ (gồm dỡ lại pallet bị chắn)
+  orders: RedTeamOrderResult[];   // các đơn được giao xong ở điểm này
+  lateness: number;        // trễ lớn nhất trong các đơn giao ở điểm này
+  rehandleMin: number;
+  blocked: RedTeamBlockLink[];
+}
+
+export interface RedTeamSimResult {
+  incidentIds: string[];
+  startMin: number;                  // phút xe rời kho (âm nếu xuất phát sớm hơn kế hoạch)
+  events: RedTeamStopEvent[];
+  brokenOrderIds: string[];          // các đơn trễ hạn
+  firstBreakStopId: string | null;   // điểm đầu tiên (theo thứ tự thực tế) có đơn trễ
+  maxLateness: number;
+  totalLateness: number;
+  links: RedTeamBlockLink[];         // mọi cặp chắn đã phát sinh
+  causes: RedTeamCause[];            // nguyên nhân cộng dồn tới điểm gãy đầu tiên (hoặc toàn chuyến nếu không gãy)
+  explanation: string[];             // chuỗi giải thích để hiển thị
+}
+
+export interface RedTeamComboResult {
+  incidentIds: string[];
+  label: string;
+  sim: RedTeamSimResult;
+}
+
+export interface RedTeamBreakRow {
+  orderId: string;
+  name: string;
+  breakCount: number;      // số tổ hợp sự cố làm đơn này trễ
+  maxLateness: number;
+  worstComboLabel: string;
+}
+
+export interface RedTeamReport {
+  total: number;                    // số tổ hợp đã chạy (kể cả "không sự cố")
+  brokenCount: number;              // số tổ hợp có ít nhất 1 đơn trễ
+  combos: RedTeamComboResult[];     // xếp theo mức trễ giảm dần
+  breakTable: RedTeamBreakRow[];    // điểm gãy xếp theo mức trễ giảm dần
+}
+
+// Tô sáng pallet trong khung 3D: bị chắn / đang chắn / cần đổi chỗ (đề xuất đổi sơ đồ).
+export interface RedTeamHighlight {
+  blocked: string[];
+  blockers: string[];
+  moved: string[];
+}
+
+export type RedTeamRescueKind = 'KEEP' | 'RELAYOUT' | 'EARLY_DEPART' | 'SPLIT_ORDER';
+
+export interface RedTeamRescueOption {
+  id: string;
+  kind: RedTeamRescueKind;
+  title: string;
+  detail: string;
+  scenario: RedTeamScenario;      // kịch bản sau khi áp phương án cứu
+  total: number;
+  brokenCount: number;            // số tổ hợp vẫn gãy
+  maxLateness: number;
+  totalLateness: number;
+  recommended: boolean;
+  highlight: RedTeamHighlight;
+}

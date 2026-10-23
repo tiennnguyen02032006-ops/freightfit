@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { EditHistoryState, SegregationRule, ToleranceSettings } from '../domain/types';
+import type { EditHistoryState, RedTeamHighlight, SegregationRule, ToleranceSettings } from '../domain/types';
 import { DEFAULT_TOLERANCE_SETTINGS } from '../engine/config';
 import { DEFAULT_SEGREGATION_RULES } from '../engine/segregation';
 import { createContainerSlice, type ContainerSlice } from './slices/containerSlice';
@@ -40,6 +40,9 @@ export interface RootExtraState {
   // vài cặp ví dụ, phải đối chiếu quy định IMDG hiện hành. Chỉ có tác dụng ở lần "Tạo phương án" kế tiếp.
   segregationRules: SegregationRule[];
   setSegregationRules: (rules: SegregationRule[]) => void;
+  // Pallet cần tô sáng trong khung 3D theo phương án cứu của bảng Red Team (engine/redteam/); chỉ là trạng thái hiển thị.
+  redTeamHighlight: RedTeamHighlight | null;
+  setRedTeamHighlight: (highlight: RedTeamHighlight | null) => void;
   selectPlacement: (placementId: string | null) => void;
   // Chọn 1 thùng trong pallet (gọi SAU selectPlacement của pallet chứa nó).
   selectPalletBox: (boxId: string | null) => void;
@@ -72,6 +75,8 @@ export const useAppStore = create<RootStore>()((set, get, api) => ({
   setTolerance: (patch) => set((state) => ({ tolerance: { ...state.tolerance, ...patch } })),
   segregationRules: DEFAULT_SEGREGATION_RULES,
   setSegregationRules: (rules) => set({ segregationRules: rules }),
+  redTeamHighlight: null,
+  setRedTeamHighlight: (highlight) => set({ redTeamHighlight: highlight }),
   ui: { viewMode: '3D', selectedPlacementId: null, selectedBoxId: null, showDunnage: true, isLoading: false, rotateModeActive: false },
   // Bỏ chọn kiện hàng (placementId = null) luôn tắt kèm chế độ xoay — mũi tên xoay chỉ có ý nghĩa
   // khi đang chọn đúng 1 kiện, giữ chế độ xoay bật cho 1 lựa chọn "trống" sẽ chỉ gây rối.
