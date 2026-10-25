@@ -2435,3 +2435,27 @@ button.primary:hover:not(:disabled) {
     order: 3;
   }
 }
+
+/* Khi bảng Red Team mở: khu kết quả cao theo nội dung (cột giữa cuộn dọc) thay vì ép vừa khung — nếu không, khung 3D + bảng bên phải
+   tràn ra và đè lên bảng Red Team. Khung 3D giữ chiều cao cố định để vẫn nhìn thấy pallet được tô sáng. */
+.result-area.has-redteam {
+  height: auto;
+  min-height: 100%;
+}
+
+.result-area.has-redteam .result-body {
+  flex: 0 0 auto;
+  height: clamp(440px, 64vh, 680px);
+}
+
+.result-area.has-redteam .redteam-panel {
+  max-height: none;
+  overflow: visible;
+}
+
+@container result (max-width: 860px) {
+  .result-area.has-redteam .result-body {
+    height: auto;
+    min-height: 440px;
+  }
+}

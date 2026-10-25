@@ -38,7 +38,7 @@ export function CargoVisibilityPanel({ items, hiddenIds, onToggle, onShowAll, ra
         >
           {collapsed ? '▸' : '▾'}
         </button>
-        <span className="cargo-visibility-panel-title">{colorMode === 'customer' ? 'Khách hàng' : 'Hàng hóa'}</span>
+        <span className="cargo-visibility-panel-title">Hàng hóa</span>
         <button
           type="button"
           className="cargo-visibility-panel-show-all"

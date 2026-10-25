@@ -30,4 +30,9 @@ describe('customerColor', () => {
     expect(displayColor(t, 'customer')).toBe(customerColor('ACME'));
     expect(displayColor(t, 'sku')).toBe('#112233');
   });
+
+  it('hàng chưa ghi khách hàng giữ màu SKU ở chế độ khách hàng (không bị tô xám)', () => {
+    expect(displayColor({ color: '#112233' }, 'customer')).toBe('#112233');
+    expect(displayColor({ color: '#112233', customer: '   ' }, 'customer')).toBe('#112233');
+  });
 });

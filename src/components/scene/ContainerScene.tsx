@@ -26,7 +26,7 @@ import { groupLabel, segregationNotesFor } from '../../engine/segregation';
 import { formatTemperature, stackHeightLimit } from '../../engine/reefer';
 import { HeightLimitLine } from './HeightLimitLine';
 import { RedTeamPanel } from './RedTeamPanel';
-import { NO_CUSTOMER_LABEL, displayColor, normalizeCustomer, type ColorMode } from '../../utils/customerColor';
+import { displayColor, normalizeCustomer, type ColorMode } from '../../utils/customerColor';
 import { downloadPackingSolutionPdf, type ContainerReportInput } from '../../export/exportPdf';
 
 // Đợi vài animation frame sau khi đổi activeContainerInstanceId (store) trước khi chụp canvas —
@@ -230,8 +230,9 @@ export function ContainerScene() {
     for (const [cargoTemplateId, count] of countByTemplateId) {
       const template = templatesById.get(cargoTemplateId);
       const customerKey = normalizeCustomer(template?.customer);
-      // Chế độ khách hàng: gom mọi loại hàng của cùng 1 khách thành 1 mục chú giải.
-      const key = colorMode === 'customer' ? `customer:${customerKey ?? ''}` : cargoTemplateId;
+      // Chế độ khách hàng: gom theo khách; hàng chưa ghi khách giữ mục riêng theo SKU (màu SKU).
+      const byCustomer = colorMode === 'customer' && customerKey !== undefined;
+      const key = byCustomer ? `customer:${customerKey}` : cargoTemplateId;
       const existing = items.get(key);
       if (existing) {
         existing.cargoTemplateIds.push(cargoTemplateId);
@@ -241,7 +242,7 @@ export function ContainerScene() {
       items.set(key, {
         key,
         cargoTemplateIds: [cargoTemplateId],
-        name: colorMode === 'customer' ? (template?.customer?.trim() || NO_CUSTOMER_LABEL) : (template?.name ?? cargoTemplateId),
+        name: byCustomer ? (template?.customer?.trim() ?? cargoTemplateId) : (template?.name ?? cargoTemplateId),
         color: template ? displayColor(template, colorMode) : '#999999',
         count,
       });
@@ -436,7 +437,7 @@ export function ContainerScene() {
   });
 
   return (
-    <div className="result-area">
+    <div className={`result-area${redTeamOpen ? ' has-redteam' : ''}`}>
       <ResultTopBar
         containerTemplate={containerTemplate}
         canExportPdf={!!solution}

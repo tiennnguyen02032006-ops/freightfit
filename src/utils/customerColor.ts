@@ -29,7 +29,10 @@ export function customerColor(customer: string | undefined): string {
   return hslToHex(hash % 360, 68, 52);
 }
 
-/** Màu dùng để vẽ 1 loại hàng theo chế độ đang chọn. */
+/**
+ * Màu dùng để vẽ 1 loại hàng theo chế độ đang chọn. Chế độ khách hàng chỉ đổi màu hàng ĐÃ ghi khách hàng; hàng chưa ghi
+ * khách hàng giữ màu SKU của nó (không bị tô xám chung).
+ */
 export function displayColor(template: Pick<CargoTemplate, 'color' | 'customer'>, mode: ColorMode): string {
-  return mode === 'customer' ? customerColor(template.customer) : template.color;
+  return mode === 'customer' && normalizeCustomer(template.customer) ? customerColor(template.customer) : template.color;
 }
